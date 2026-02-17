@@ -1,5 +1,6 @@
 # Binary
 wt-bin
+worktree-switcher
 
 # Build output
 dist/
