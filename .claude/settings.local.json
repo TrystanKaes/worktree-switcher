@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(chmod:*)",
+      "Bash(go build:*)",
+      "Bash(./ws-bin init:*)",
+      "Bash(./ws-bin help:*)",
+      "Bash(cat:*)"
+    ]
+  }
+}
