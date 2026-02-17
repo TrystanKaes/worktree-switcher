@@ -71,7 +71,24 @@ func runInteractive() error {
 
 	SortByModified(worktrees)
 
-	selected, err := RunTUI(worktrees)
+	// Pin previous worktree to top if __WS_LAST_DIR is set
+	previousIdx := -1
+	if lastDir := os.Getenv("__WS_LAST_DIR"); lastDir != "" {
+		for i, ws := range worktrees {
+			if ws.Path == lastDir {
+				if i > 0 {
+					// Move to front
+					prev := worktrees[i]
+					copy(worktrees[1:i+1], worktrees[0:i])
+					worktrees[0] = prev
+				}
+				previousIdx = 0
+				break
+			}
+		}
+	}
+
+	selected, err := RunTUI(worktrees, previousIdx)
 	if err != nil {
 		return err
 	}
@@ -150,6 +167,18 @@ func runInit(args []string) error {
 }
 
 const bashInitCode = `ws() {
+  if [[ "$1" == "back" ]]; then
+    if [[ -n "$__WS_LAST_DIR" ]]; then
+      local prev="$__WS_LAST_DIR"
+      __WS_LAST_DIR="$PWD"
+      cd "$prev" || return 1
+    else
+      echo "ws: no previous worktree" >&2
+      return 1
+    fi
+    return 0
+  fi
+
   if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" ]]; then
     ws-bin "$@"
     return $?
@@ -160,6 +189,7 @@ const bashInitCode = `ws() {
   local rc=$?
 
   if [[ $rc -eq 0 && -n "$dir" ]]; then
+    __WS_LAST_DIR="$PWD"
     cd "$dir" || return 1
   fi
   return $rc
@@ -168,7 +198,7 @@ const bashInitCode = `ws() {
 _ws_completions() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "list prune help" -- "$cur"))
+    COMPREPLY=($(compgen -W "back list prune help" -- "$cur"))
   elif [[ "${COMP_WORDS[1]}" == "prune" && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=($(compgen -W "-f --force" -- "$cur"))
   fi
@@ -178,6 +208,18 @@ complete -F _ws_completions ws
 `
 
 const zshInitCode = `ws() {
+  if [[ "$1" == "back" ]]; then
+    if [[ -n "$__WS_LAST_DIR" ]]; then
+      local prev="$__WS_LAST_DIR"
+      __WS_LAST_DIR="$PWD"
+      cd "$prev" || return 1
+    else
+      echo "ws: no previous worktree" >&2
+      return 1
+    fi
+    return 0
+  fi
+
   if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" ]]; then
     ws-bin "$@"
     return $?
@@ -188,6 +230,7 @@ const zshInitCode = `ws() {
   local rc=$?
 
   if [[ $rc -eq 0 && -n "$dir" ]]; then
+    __WS_LAST_DIR="$PWD"
     cd "$dir" || return 1
   fi
   return $rc
@@ -196,6 +239,7 @@ const zshInitCode = `ws() {
 _ws() {
   local -a subcommands
   subcommands=(
+    'back:Return to previous worktree'
     'list:List all worktrees'
     'prune:Remove stale worktrees'
     'help:Show help'
@@ -222,6 +266,7 @@ func printUsage() {
 Usage:
   ws              Interactive TUI to select a worktree
   ws <fragment>   Switch to worktree matching fragment (path or branch)
+  ws back         Return to the previous worktree
   ws list         List all worktrees (plain text, scriptable)
   ws prune        Remove stale worktrees (interactive confirmation)
   ws prune -f     Remove stale worktrees (no confirmation)

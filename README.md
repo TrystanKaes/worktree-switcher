@@ -35,6 +35,7 @@ You can also specify the shell explicitly: `ws-bin init bash` or `ws-bin init zs
 ```
 ws              Interactive TUI to select a worktree
 ws <fragment>   Switch to worktree matching fragment (path or branch)
+ws back         Return to the previous worktree
 ws list         List all worktrees (plain text, scriptable)
 ws prune        Remove stale worktrees (interactive confirmation)
 ws prune -f     Remove stale worktrees (no confirmation)
@@ -63,6 +64,10 @@ ws feat        # cd into the worktree whose path or branch contains "feat"
 ```
 
 If the fragment matches zero or more than one worktree, an error is returned.
+
+### Quick back
+
+`ws back` returns to the last worktree you switched away from. Running it again toggles back, so you can bounce between two worktrees. The previous worktree is also pinned to the top of the interactive TUI with a `(prev)` label.
 
 ### Pruning stale worktrees
 

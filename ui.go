@@ -15,25 +15,28 @@ var (
 	branchStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))             // yellow
 	timeStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))             // gray
 	filterStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)  // magenta
+	prevStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))             // blue
 )
 
 type model struct {
-	worktrees []Worktree
-	filtered  []int // indices into worktrees
-	cursor    int
-	filter    string
-	selected  string // result path
-	quitting  bool
+	worktrees   []Worktree
+	filtered    []int // indices into worktrees
+	cursor      int
+	filter      string
+	selected    string // result path
+	quitting    bool
+	previousIdx int // index of previous worktree (-1 if none)
 }
 
-func newModel(worktrees []Worktree) model {
+func newModel(worktrees []Worktree, previousIdx int) model {
 	indices := make([]int, len(worktrees))
 	for i := range worktrees {
 		indices[i] = i
 	}
 	return model{
-		worktrees: worktrees,
-		filtered:  indices,
+		worktrees:   worktrees,
+		filtered:    indices,
+		previousIdx: previousIdx,
 	}
 }
 
@@ -166,20 +169,27 @@ func (m model) View() string {
 		pathPadded := path + strings.Repeat(" ", maxPath-len(path))
 		branchPadded := branch + strings.Repeat(" ", maxBranch-len(branch))
 
+		prevLabel := ""
+		if idx == m.previousIdx {
+			prevLabel = "  " + prevStyle.Render("(prev)")
+		}
+
 		if i == m.cursor {
-			line := fmt.Sprintf("%s%s  %s  %s",
+			line := fmt.Sprintf("%s%s  %s  %s%s",
 				cursor,
 				selectedStyle.Render(pathPadded),
 				branchStyle.Render(branchPadded),
 				timeStyle.Render(relTime),
+				prevLabel,
 			)
 			b.WriteString(line)
 		} else {
-			line := fmt.Sprintf("%s%s  %s  %s",
+			line := fmt.Sprintf("%s%s  %s  %s%s",
 				cursor,
 				dimStyle.Render(pathPadded),
 				dimStyle.Render(branchPadded),
 				dimStyle.Render(relTime),
+				prevLabel,
 			)
 			b.WriteString(line)
 		}
@@ -195,8 +205,8 @@ func (m model) View() string {
 
 // RunTUI launches the interactive worktree picker.
 // Returns the selected path, or empty string if cancelled.
-func RunTUI(worktrees []Worktree) (string, error) {
-	m := newModel(worktrees)
+func RunTUI(worktrees []Worktree, previousIdx int) (string, error) {
+	m := newModel(worktrees, previousIdx)
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
