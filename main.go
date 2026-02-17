@@ -32,6 +32,13 @@ func main() {
 			}
 			return
 
+		case "create":
+			if err := runCreate(args[1:]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
+
 		case "init":
 			if err := runInit(args[1:]); err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -150,7 +157,7 @@ func runInit(args []string) error {
 	} else {
 		shellEnv := os.Getenv("SHELL")
 		if shellEnv == "" {
-			return fmt.Errorf("no shell specified and $SHELL is not set\nUsage: ws-bin init [bash|zsh]")
+			return fmt.Errorf("no shell specified and $SHELL is not set\nUsage: wt-bin init [bash|zsh]")
 		}
 		shell = filepath.Base(shellEnv)
 	}
@@ -166,26 +173,26 @@ func runInit(args []string) error {
 	return nil
 }
 
-const bashInitCode = `ws() {
-  if [[ "$1" == "back" ]]; then
+const bashInitCode = `wt() {
+  if [[ "$1" == "switch" ]]; then
     if [[ -n "$__WS_LAST_DIR" ]]; then
       local prev="$__WS_LAST_DIR"
       __WS_LAST_DIR="$PWD"
       cd "$prev" || return 1
     else
-      echo "ws: no previous worktree" >&2
+      echo "wt: no previous worktree" >&2
       return 1
     fi
     return 0
   fi
 
   if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" ]]; then
-    ws-bin "$@"
+    wt-bin "$@"
     return $?
   fi
 
   local dir
-  dir="$(ws-bin "$@")"
+  dir="$(wt-bin "$@")"
   local rc=$?
 
   if [[ $rc -eq 0 && -n "$dir" ]]; then
@@ -195,38 +202,40 @@ const bashInitCode = `ws() {
   return $rc
 }
 
-_ws_completions() {
+_wt_completions() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "back list prune help" -- "$cur"))
+    COMPREPLY=($(compgen -W "switch create list prune help" -- "$cur"))
+  elif [[ "${COMP_WORDS[1]}" == "create" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=($(compgen -W "--detached -d" -- "$cur"))
   elif [[ "${COMP_WORDS[1]}" == "prune" && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=($(compgen -W "-f --force" -- "$cur"))
   fi
 }
 
-complete -F _ws_completions ws
+complete -F _wt_completions wt
 `
 
-const zshInitCode = `ws() {
-  if [[ "$1" == "back" ]]; then
+const zshInitCode = `wt() {
+  if [[ "$1" == "switch" ]]; then
     if [[ -n "$__WS_LAST_DIR" ]]; then
       local prev="$__WS_LAST_DIR"
       __WS_LAST_DIR="$PWD"
       cd "$prev" || return 1
     else
-      echo "ws: no previous worktree" >&2
+      echo "wt: no previous worktree" >&2
       return 1
     fi
     return 0
   fi
 
   if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" ]]; then
-    ws-bin "$@"
+    wt-bin "$@"
     return $?
   fi
 
   local dir
-  dir="$(ws-bin "$@")"
+  dir="$(wt-bin "$@")"
   local rc=$?
 
   if [[ $rc -eq 0 && -n "$dir" ]]; then
@@ -236,10 +245,11 @@ const zshInitCode = `ws() {
   return $rc
 }
 
-_ws() {
+_wt() {
   local -a subcommands
   subcommands=(
-    'back:Return to previous worktree'
+    'switch:Return to previous worktree'
+    'create:Create a new worktree'
     'list:List all worktrees'
     'prune:Remove stale worktrees'
     'help:Show help'
@@ -247,6 +257,13 @@ _ws() {
 
   if (( CURRENT == 2 )); then
     _describe 'command' subcommands
+  elif (( CURRENT == 3 )) && [[ "${words[2]}" == "create" ]]; then
+    local -a create_flags
+    create_flags=(
+      '--detached:Create a detached HEAD worktree'
+      '-d:Create a detached HEAD worktree'
+    )
+    _describe 'flag' create_flags
   elif (( CURRENT == 3 )) && [[ "${words[2]}" == "prune" ]]; then
     local -a prune_flags
     prune_flags=(
@@ -257,29 +274,108 @@ _ws() {
   fi
 }
 
-compdef _ws ws
+compdef _wt wt
 `
+
+func runCreate(args []string) error {
+	detached := false
+	var branch string
+	for _, a := range args {
+		if a == "--detached" || a == "-d" {
+			detached = true
+		} else if branch == "" {
+			branch = a
+		}
+	}
+
+	repo, err := RepoName()
+	if err != nil {
+		return err
+	}
+
+	if branch == "" && !detached {
+		// No branch arg: create worktree for current branch
+		cur, err := CurrentBranch()
+		if err != nil {
+			return err
+		}
+		if cur == "HEAD" {
+			return fmt.Errorf("cannot determine current branch (detached HEAD); use --detached or specify a branch")
+		}
+		path, actualBranch, err := CreateWorktreeForBranch(repo, cur, true)
+		if err != nil {
+			return err
+		}
+		if actualBranch != cur {
+			fmt.Fprintf(os.Stderr, "branch %q already checked out, created %q instead\n", cur, actualBranch)
+		}
+		fmt.Println(path)
+		return nil
+	}
+
+	if detached && branch == "" {
+		// Detached HEAD from current commit
+		path, err := WorktreePath(repo, "detached", true)
+		if err != nil {
+			return err
+		}
+		if err := AddWorktree(path, "", false, true); err != nil {
+			return err
+		}
+		fmt.Println(path)
+		return nil
+	}
+
+	if detached {
+		// Detached at tip of specified branch
+		path, err := WorktreePath(repo, branch, false)
+		if err != nil {
+			return err
+		}
+		if err := AddWorktree(path, branch, false, true); err != nil {
+			return err
+		}
+		fmt.Println(path)
+		return nil
+	}
+
+	// Branch specified, not detached
+	path, actualBranch, err := CreateWorktreeForBranch(repo, branch, false)
+	if err != nil {
+		return err
+	}
+	if actualBranch != branch {
+		fmt.Fprintf(os.Stderr, "branch %q already checked out, created %q instead\n", branch, actualBranch)
+	}
+	fmt.Println(path)
+	return nil
+}
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, `worktree-switcher — Interactive git worktree switcher
 
 Usage:
-  ws              Interactive TUI to select a worktree
-  ws <fragment>   Switch to worktree matching fragment (path or branch)
-  ws back         Return to the previous worktree
-  ws list         List all worktrees (plain text, scriptable)
-  ws prune        Remove stale worktrees (interactive confirmation)
-  ws prune -f     Remove stale worktrees (no confirmation)
-  ws init [shell] Output shell integration code (auto-detects from $SHELL)
-  ws help         Show this help
+  wt                        Interactive TUI to select a worktree
+  wt <fragment>             Switch to worktree matching fragment (path or branch)
+  wt switch                 Return to the previous worktree
+  wt create                 Create a worktree for the current branch
+  wt create <branch>        Create a worktree for the given branch (or new branch)
+  wt create --detached      Create a detached HEAD worktree
+  wt create <branch> -d     Create a detached worktree at the tip of <branch>
+  wt list                   List all worktrees (plain text, scriptable)
+  wt prune                  Remove stale worktrees (interactive confirmation)
+  wt prune -f               Remove stale worktrees (no confirmation)
+  wt init [shell]           Output shell integration code (auto-detects from $SHELL)
+  wt help                   Show this help
 
 Shell setup:
-  Add to your shell config:  eval "$(ws-bin init)"
+  Add to your shell config:  eval "$(wt-bin init)"
 
 Navigation (TUI):
   ↑/↓         Move cursor
   Enter       Select worktree
   Type         Filter worktrees
   Backspace   Clear filter
+  d            Toggle delete mode (when not filtering)
   Esc/Ctrl+C  Quit without selecting`)
 }

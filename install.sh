@@ -24,16 +24,16 @@ case "$shell_name" in
   *)
     echo "Unsupported shell: $shell_name (supported: bash, zsh)"
     echo "Add this to your shell config manually:"
-    echo '  eval "$(ws-bin init)"'
+    echo '  eval "$(wt-bin init)"'
     exit 0
     ;;
 esac
 
-init_marker='ws-bin init'
+init_marker='wt-bin init'
 
 if grep -qF "$init_marker" "$profile" 2>/dev/null; then
   echo "Shell already configured in $profile"
 else
-  printf '\n# worktree-switcher\neval "$(ws-bin init)"\n' >> "$profile"
+  printf '\n# worktree-switcher\neval "$(wt-bin init)"\n' >> "$profile"
   echo "Added shell integration to $profile"
 fi

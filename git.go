@@ -182,6 +182,8 @@ func FindStaleWorktrees(worktrees []Worktree) []StaleInfo {
 }
 
 // RemoveWorktree runs `git worktree remove <path>`.
+// When called from a TUI context, set captureErr to get the git error message
+// in the returned error instead of printing to stderr.
 func RemoveWorktree(path string, force bool) error {
 	args := []string{"worktree", "remove"}
 	if force {
@@ -189,9 +191,18 @@ func RemoveWorktree(path string, force bool) error {
 	}
 	args = append(args, path)
 	cmd := exec.Command("git", args...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	var stderr strings.Builder
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("%s", msg)
+		}
+		return err
+	}
+	return nil
 }
 
 func detectMainBranch() string {
@@ -210,6 +221,141 @@ func branchExists(branch string) bool {
 
 func isBranchMerged(branch, into string) bool {
 	cmd := exec.Command("git", "merge-base", "--is-ancestor", branch, into)
+	return cmd.Run() == nil
+}
+
+// RepoName returns the base name of the git repository root directory.
+func RepoName() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get repo name: %w", err)
+	}
+	return filepath.Base(strings.TrimSpace(string(out))), nil
+}
+
+// CurrentBranch returns the current branch name, or "HEAD" if detached.
+func CurrentBranch() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// branchCheckedOut returns true if the branch is already checked out in a worktree.
+func branchCheckedOut(branch string) bool {
+	worktrees, err := ListWorktrees()
+	if err != nil {
+		return false
+	}
+	for _, wt := range worktrees {
+		if wt.Branch == branch {
+			return true
+		}
+	}
+	return false
+}
+
+// nextAvailableBranch returns a branch name like "base-2", "base-3", etc.
+// that doesn't already exist.
+func nextAvailableBranch(base string) string {
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s-%d", base, n)
+		if !branchExists(candidate) {
+			return candidate
+		}
+	}
+}
+
+// AddWorktree creates a new git worktree.
+func AddWorktree(path, branch string, newBranch, detached bool) error {
+	var args []string
+	switch {
+	case detached && branch != "":
+		args = []string{"worktree", "add", "--detach", path, branch}
+	case detached:
+		args = []string{"worktree", "add", "--detach", path}
+	case newBranch:
+		args = []string{"worktree", "add", "-b", branch, path}
+	default:
+		args = []string{"worktree", "add", path, branch}
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git worktree add failed: %w", err)
+	}
+	return nil
+}
+
+// CreateWorktreeForBranch creates a worktree for the given branch.
+// If the branch is already checked out in another worktree, it creates a new
+// branch (e.g. main-2, main-3) based on the original. Returns the created path
+// and the actual branch name used.
+func CreateWorktreeForBranch(repo, branch string, numbered bool) (path string, actualBranch string, err error) {
+	exists := branchExists(branch) || remoteBranchExists(branch)
+
+	if exists && branchCheckedOut(branch) {
+		// Branch already checked out — create a new branch from it
+		newBranch := nextAvailableBranch(branch)
+		path, err = WorktreePath(repo, newBranch, numbered)
+		if err != nil {
+			return "", "", err
+		}
+		// -b <newBranch> <path> <startPoint>
+		cmd := exec.Command("git", "worktree", "add", "-b", newBranch, path, branch)
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			msg := strings.TrimSpace(stderr.String())
+			if msg != "" {
+				return "", "", fmt.Errorf("%s", msg)
+			}
+			return "", "", fmt.Errorf("git worktree add failed: %w", err)
+		}
+		return path, newBranch, nil
+	}
+
+	path, err = WorktreePath(repo, branch, numbered)
+	if err != nil {
+		return "", "", err
+	}
+	if err := AddWorktree(path, branch, !exists, false); err != nil {
+		return "", "", err
+	}
+	return path, branch, nil
+}
+
+// SanitizeBranch replaces characters unsuitable for filesystem paths.
+func SanitizeBranch(branch string) string {
+	return strings.ReplaceAll(branch, "/", "-")
+}
+
+// WorktreePath returns the target directory for a new worktree.
+// If numbered is true, it appends an incrementing number to avoid collisions.
+func WorktreePath(repo, branch string, numbered bool) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	base := filepath.Join(home, ".worktree-switcher", repo, SanitizeBranch(branch))
+	if !numbered {
+		return base, nil
+	}
+	for n := 1; ; n++ {
+		p := filepath.Join(base, fmt.Sprintf("%d", n))
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			return p, nil
+		}
+	}
+}
+
+// remoteBranchExists checks if a branch exists on a remote.
+func remoteBranchExists(branch string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/remotes/origin/%s", branch))
 	return cmd.Run() == nil
 }
 

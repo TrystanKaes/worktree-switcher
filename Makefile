@@ -1,4 +1,4 @@
-BINARY    := ws-bin
+BINARY    := wt-bin
 MODULE    := github.com/trystankaes/worktree-switcher
 BUILD_DIR := dist
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
