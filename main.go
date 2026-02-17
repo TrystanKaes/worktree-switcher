@@ -78,9 +78,9 @@ func runInteractive() error {
 
 	SortByModified(worktrees)
 
-	// Pin previous worktree to top if __WS_LAST_DIR is set
+	// Pin previous worktree to top if __WT_LAST_DIR is set
 	previousIdx := -1
-	if lastDir := os.Getenv("__WS_LAST_DIR"); lastDir != "" {
+	if lastDir := os.Getenv("__WT_LAST_DIR"); lastDir != "" {
 		for i, ws := range worktrees {
 			if ws.Path == lastDir {
 				if i > 0 {
@@ -175,9 +175,9 @@ func runInit(args []string) error {
 
 const bashInitCode = `wt() {
   if [[ "$1" == "switch" ]]; then
-    if [[ -n "$__WS_LAST_DIR" ]]; then
-      local prev="$__WS_LAST_DIR"
-      __WS_LAST_DIR="$PWD"
+    if [[ -n "$__WT_LAST_DIR" ]]; then
+      local prev="$__WT_LAST_DIR"
+      __WT_LAST_DIR="$PWD"
       cd "$prev" || return 1
     else
       echo "wt: no previous worktree" >&2
@@ -196,7 +196,7 @@ const bashInitCode = `wt() {
   local rc=$?
 
   if [[ $rc -eq 0 && -n "$dir" ]]; then
-    __WS_LAST_DIR="$PWD"
+    __WT_LAST_DIR="$PWD"
     cd "$dir" || return 1
   fi
   return $rc
@@ -218,9 +218,9 @@ complete -F _wt_completions wt
 
 const zshInitCode = `wt() {
   if [[ "$1" == "switch" ]]; then
-    if [[ -n "$__WS_LAST_DIR" ]]; then
-      local prev="$__WS_LAST_DIR"
-      __WS_LAST_DIR="$PWD"
+    if [[ -n "$__WT_LAST_DIR" ]]; then
+      local prev="$__WT_LAST_DIR"
+      __WT_LAST_DIR="$PWD"
       cd "$prev" || return 1
     else
       echo "wt: no previous worktree" >&2
@@ -239,7 +239,7 @@ const zshInitCode = `wt() {
   local rc=$?
 
   if [[ $rc -eq 0 && -n "$dir" ]]; then
-    __WS_LAST_DIR="$PWD"
+    __WT_LAST_DIR="$PWD"
     cd "$dir" || return 1
   fi
   return $rc
@@ -352,7 +352,7 @@ func runCreate(args []string) error {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, `worktree-switcher — Interactive git worktree switcher
+	fmt.Fprintln(os.Stderr, `worktree-switcher — Interactive git worktree switcher (BuiltByBurns)
 
 Usage:
   wt                        Interactive TUI to select a worktree

@@ -182,8 +182,7 @@ func FindStaleWorktrees(worktrees []Worktree) []StaleInfo {
 }
 
 // RemoveWorktree runs `git worktree remove <path>`.
-// When called from a TUI context, set captureErr to get the git error message
-// in the returned error instead of printing to stderr.
+// The git error message is captured and returned in the error.
 func RemoveWorktree(path string, force bool) error {
 	args := []string{"worktree", "remove"}
 	if force {
@@ -283,9 +282,15 @@ func AddWorktree(path, branch string, newBranch, detached bool) error {
 		args = []string{"worktree", "add", path, branch}
 	}
 	cmd := exec.Command("git", args...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	var stderr strings.Builder
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("%s", msg)
+		}
 		return fmt.Errorf("git worktree add failed: %w", err)
 	}
 	return nil
@@ -308,6 +313,8 @@ func CreateWorktreeForBranch(repo, branch string, numbered bool) (path string, a
 		// -b <newBranch> <path> <startPoint>
 		cmd := exec.Command("git", "worktree", "add", "-b", newBranch, path, branch)
 		var stderr strings.Builder
+		cmd.Stdin = nil
+		cmd.Stdout = nil
 		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
 			msg := strings.TrimSpace(stderr.String())

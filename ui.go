@@ -23,15 +23,20 @@ func removeWorktreeCmd(path string, force bool) tea.Cmd {
 	}
 }
 
+// Use a renderer targeting stderr since the TUI outputs there
+// (stdout is captured by the shell wrapper for cd).
+var renderer = lipgloss.NewRenderer(os.Stderr)
+
 var (
-	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))  // cyan
-	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))             // gray
-	branchStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))             // yellow
-	timeStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))             // gray
-	filterStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)  // magenta
-	prevStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))             // blue
-	deleteStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))  // red
-	dangerStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))             // red dim
+	headerStyle = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))  // green
+	selectedStyle = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))  // cyan
+	dimStyle      = renderer.NewStyle().Foreground(lipgloss.Color("8"))             // gray
+	branchStyle   = renderer.NewStyle().Foreground(lipgloss.Color("3"))             // yellow
+	timeStyle     = renderer.NewStyle().Foreground(lipgloss.Color("8"))             // gray
+	filterStyle   = renderer.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)  // magenta
+	prevStyle     = renderer.NewStyle().Foreground(lipgloss.Color("4"))             // blue
+	deleteStyle   = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))  // red
+	dangerStyle   = renderer.NewStyle().Foreground(lipgloss.Color("1"))             // red dim
 )
 
 type model struct {
@@ -281,6 +286,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if (r == "d" || r == "D") && m.filter == "" {
 				m.deleteMode = !m.deleteMode
 				m.deleteErr = ""
+				// Clamp cursor when entering delete mode (no "create new" row)
+				if m.deleteMode && m.cursor >= len(m.filtered) {
+					m.cursor = max(0, len(m.filtered)-1)
+				}
 				return m, nil
 			}
 			m.filter += r
@@ -337,7 +346,11 @@ func (m model) View() string {
 
 	// Delete mode header
 	if m.deleteMode {
-		b.WriteString(deleteStyle.Render("DELETE MODE"))
+		b.WriteString(headerStyle.Render("WORKTREE SWITCHER"))
+		b.WriteString(deleteStyle.Render(" (delete mode)"))
+		b.WriteString("\n\n")
+	} else {
+		b.WriteString(headerStyle.Render("WORKTREE SWITCHER"))
 		b.WriteString("\n\n")
 	}
 
@@ -455,13 +468,7 @@ func (m model) View() string {
 
 		// Build prefix
 		var prefix string
-		if m.deleteMode {
-			if isCursor {
-				prefix = deleteStyle.Render("[X] ")
-			} else {
-				prefix = dimStyle.Render("[ ] ")
-			}
-		} else if isCursor {
+		if isCursor {
 			prefix = "> "
 		} else {
 			prefix = "  "

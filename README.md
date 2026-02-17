@@ -1,6 +1,6 @@
 # worktree-switcher
 
-An interactive TUI for switching between git worktrees. Type to fuzzy-filter, press enter to `cd` into your selection.
+An interactive TUI for managing and switching between git worktrees. Type to fuzzy-filter, press enter to `cd` into your selection.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ You can also specify the shell explicitly: `wt-bin init bash` or `wt-bin init zs
 
 </details>
 
-## Usage
+## Commands
 
 ```
 wt                        Interactive TUI to select a worktree
@@ -47,37 +47,39 @@ wt init [shell]           Output shell integration code (auto-detects from $SHEL
 wt help                   Show this help
 ```
 
-### Interactive TUI
+## Interactive TUI
 
-Run `wt` with no arguments to launch the picker. Worktrees are sorted by most recently modified.
+Run `wt` with no arguments to launch the picker. Worktrees are sorted by most recently modified. The previously selected worktree is pinned to the top with a `(prev)` label.
 
-| Key          | Action                          |
-| ------------ | ------------------------------- |
-| Up / Down    | Move cursor                     |
-| Enter        | Select worktree                 |
-| Type         | Fuzzy-filter the list           |
-| Backspace    | Clear filter                    |
-| d            | Toggle delete mode (when not filtering) |
-| Esc / Ctrl+C | Quit without selecting          |
+### Keybindings
 
-### Creating worktrees
+| Key          | Action                                 |
+| ------------ | -------------------------------------- |
+| Up / Down    | Move cursor                            |
+| Enter        | Select worktree (or confirm action)    |
+| Type         | Fuzzy-filter the list                  |
+| Backspace    | Clear last filter character            |
+| d            | Toggle delete mode (when not filtering)|
+| Esc / Ctrl+C | Quit (or exit current mode)            |
 
-`wt create` creates new worktrees stored at `~/.worktree-switcher/<repo>/<branch>`:
+### Creating worktrees from the TUI
 
-```sh
-wt create              # worktree for current branch (numbered: branch/1, branch/2, ...)
-wt create feature-x    # worktree for feature-x (creates branch if it doesn't exist)
-wt create --detached   # detached HEAD worktree (numbered: detached/1, detached/2, ...)
-wt create feature-x -d # detached worktree at the tip of feature-x
-```
+A `+ Create new worktree` option appears at the bottom of the list. Select it and press Enter to open a branch name input. Type a branch name and press Enter to create the worktree and `cd` into it. Press Esc to cancel.
 
-After creation, the shell wrapper automatically `cd`s into the new worktree.
+If the branch already exists and is checked out in another worktree, a new branch is automatically created (e.g. `main-2`, `main-3`).
 
 ### Deleting worktrees from the TUI
 
-Press `d` in the interactive TUI (when not filtering) to enter delete mode. The selected line turns red. Press Enter to see a confirmation dialog, then confirm or cancel. The TUI stays open after deletion so you can continue working.
+Press `d` (when not filtering) to enter delete mode:
 
-### Direct switching
+1. Each worktree shows a `[ ]` checkbox; the cursor line shows `[X]` in red
+2. Press Enter on a worktree to see a confirmation dialog (Cancel / Delete)
+3. Use Left/Right arrows (or `h`/`l`) to choose, Enter to confirm
+4. If the worktree has uncommitted changes, a second prompt asks whether to force delete
+5. The TUI stays in delete mode after deletion so you can continue removing worktrees
+6. Press `d` again or Esc to exit delete mode
+
+## Direct switching
 
 Pass a fragment to jump directly to a matching worktree by path or branch name:
 
@@ -85,21 +87,48 @@ Pass a fragment to jump directly to a matching worktree by path or branch name:
 wt feat        # cd into the worktree whose path or branch contains "feat"
 ```
 
-If the fragment matches zero or more than one worktree, an error is returned.
+The fragment is matched against the full path, short path (`~/...`), base directory name, and branch name. If it matches zero or more than one worktree, an error is returned.
 
-### Quick switch
+## Quick switch
 
-`wt switch` returns to the last worktree you switched away from. Running it again toggles back, so you can bounce between two worktrees. The previous worktree is also pinned to the top of the interactive TUI with a `(prev)` label.
+`wt switch` returns to the last worktree you switched away from. Running it again toggles back, so you can bounce between two worktrees rapidly.
 
-### Pruning stale worktrees
+## Creating worktrees
 
-`wt prune` finds worktrees that are stale and offers to remove them. A worktree is considered stale when:
+`wt create` creates new worktrees stored at `~/.worktree-switcher/<repo>/<branch>`:
 
-- Its directory no longer exists
+```sh
+wt create              # worktree for current branch (auto-numbered: branch/1, branch/2, ...)
+wt create feature-x    # worktree for feature-x (creates branch if it doesn't exist)
+wt create --detached   # detached HEAD worktree (auto-numbered: detached/1, detached/2, ...)
+wt create feature-x -d # detached worktree at the tip of feature-x
+```
+
+After creation, the shell wrapper automatically `cd`s into the new worktree.
+
+If the requested branch is already checked out in another worktree, a new branch is created from it (e.g. `feature-x-2`) and a message is printed to stderr.
+
+Branch names containing `/` are sanitized to `-` in the filesystem path (e.g. `feature/login` becomes `~/.worktree-switcher/myrepo/feature-login`).
+
+## Pruning stale worktrees
+
+`wt prune` finds worktrees that are stale and offers to remove them one by one. A worktree is considered stale when:
+
+- Its directory no longer exists on disk
 - Its branch has been deleted
 - Its branch has been merged into main/master
 
-Use `-f` or `--force` to skip confirmation prompts.
+Use `-f` or `--force` to skip confirmation prompts and remove all stale worktrees at once.
+
+## Shell integration
+
+The `wt` command is a shell function (not the binary directly). This is necessary so it can `cd` into the selected worktree in your current shell session. The binary is called `wt-bin`.
+
+The shell wrapper handles:
+- Capturing the path printed by `wt-bin` and running `cd` into it
+- The `wt switch` command (pure shell, toggles between current and previous directory)
+- Passing through commands that don't need `cd` (`list`, `prune`, `help`, `init`)
+- Tab completions for all subcommands and their flags
 
 ## Cross-platform builds
 
