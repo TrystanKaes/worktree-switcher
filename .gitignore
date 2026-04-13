@@ -24,3 +24,5 @@ Thumbs.db
 *.dylib
 *.test
 *.out
+.claude/settings.local.json
+

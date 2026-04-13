@@ -53,6 +53,13 @@ func main() {
 			}
 			return
 
+		case "interactive":
+			if err := runInteractive(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
+
 		case "--help", "-h", "help":
 			printUsage()
 			return
@@ -67,11 +74,8 @@ func main() {
 		}
 	}
 
-	// No args: interactive TUI
-	if err := runInteractive(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	// No args: print usage
+	printUsage()
 }
 
 func runInteractive() error {
@@ -149,9 +153,9 @@ func runDirect(fragment string) error {
 		return err
 	}
 
-	ws, ok := FindWorktreeByFragment(worktrees, fragment)
+	ws, ok := FindWorktreeByFuzzy(worktrees, fragment)
 	if !ok {
-		return fmt.Errorf("no unique worktree match for %q (found 0 or multiple matches)", fragment)
+		return fmt.Errorf("no worktree match for %q", fragment)
 	}
 	fmt.Println(ws.Path)
 	return nil
@@ -209,10 +213,21 @@ const bashInitCode = `wt() {
   return $rc
 }
 
+wti() {
+  local dir
+  dir="$(wt-bin interactive "$@")"
+  local rc=$?
+  if [[ $rc -eq 0 && -n "$dir" ]]; then
+    __WT_LAST_DIR="$PWD"
+    cd "$dir" || return 1
+  fi
+  return $rc
+}
+
 _wt_completions() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "switch create list prune sync help" -- "$cur"))
+    COMPREPLY=($(compgen -W "switch create list prune sync interactive help" -- "$cur"))
   elif [[ "${COMP_WORDS[1]}" == "create" && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=($(compgen -W "--detached -d" -- "$cur"))
   elif [[ "${COMP_WORDS[1]}" == "prune" && $COMP_CWORD -eq 2 ]]; then
@@ -254,6 +269,17 @@ const zshInitCode = `wt() {
   return $rc
 }
 
+wti() {
+  local dir
+  dir="$(wt-bin interactive "$@")"
+  local rc=$?
+  if [[ $rc -eq 0 && -n "$dir" ]]; then
+    __WT_LAST_DIR="$PWD"
+    cd "$dir" || return 1
+  fi
+  return $rc
+}
+
 _wt() {
   local -a subcommands
   subcommands=(
@@ -262,6 +288,7 @@ _wt() {
     'list:List all worktrees'
     'prune:Remove stale worktrees'
     'sync:Copy configured local files between worktrees'
+    'interactive:Launch interactive TUI'
     'help:Show help'
   )
 
@@ -491,8 +518,9 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, `worktree-switcher — Interactive git worktree switcher (BuiltByBurns)
 
 Usage:
-  wt                        Interactive TUI to select a worktree
-  wt <fragment>             Switch to worktree matching fragment (path or branch)
+  wt                        Show this help
+  wt <query>                Fuzzy-match a worktree and switch to it (best by recency)
+  wti                       Interactive TUI to select a worktree
   wt switch                 Return to the previous worktree
   wt create                 Create a worktree for the current branch
   wt create <branch>        Create a worktree for the given branch (or new branch)
@@ -515,7 +543,7 @@ Copy-on-create config:
 Shell setup:
   Add to your shell config:  eval "$(wt-bin init)"
 
-Navigation (TUI):
+Navigation (TUI — launched via wti):
   ↑/↓         Move cursor
   Enter       Select worktree
   Type         Filter worktrees

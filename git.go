@@ -389,3 +389,57 @@ func FindWorktreeByFragment(worktrees []Worktree, fragment string) (Worktree, bo
 	}
 	return Worktree{}, false
 }
+
+// FindWorktreeByFuzzy returns the best-matching worktree using tiered scoring.
+// Among equal scores, the most recently modified worktree wins.
+// Score 3 = exact branch match, 2 = substring match, 1 = fuzzy match.
+func FindWorktreeByFuzzy(worktrees []Worktree, query string) (Worktree, bool) {
+	query = strings.ToLower(query)
+
+	bestScore := 0
+	var best Worktree
+	found := false
+
+	for _, ws := range worktrees {
+		lowerPath := strings.ToLower(ws.Path)
+		lowerShort := strings.ToLower(ws.ShortPath())
+		lowerBranch := strings.ToLower(ws.Branch)
+
+		score := 0
+
+		// Tier 3: exact branch match
+		if lowerBranch == query {
+			score = 3
+		}
+
+		// Tier 2: substring match
+		if score < 2 {
+			if strings.Contains(lowerPath, query) ||
+				strings.Contains(lowerShort, query) ||
+				strings.Contains(lowerBranch, query) {
+				score = 2
+			}
+		}
+
+		// Tier 1: fuzzy match
+		if score < 1 {
+			if fuzzyMatch(query, lowerPath) ||
+				fuzzyMatch(query, lowerShort) ||
+				fuzzyMatch(query, lowerBranch) {
+				score = 1
+			}
+		}
+
+		if score == 0 {
+			continue
+		}
+
+		if score > bestScore || (score == bestScore && ws.ModifiedAt.After(best.ModifiedAt)) {
+			bestScore = score
+			best = ws
+			found = true
+		}
+	}
+
+	return best, found
+}
