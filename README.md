@@ -43,6 +43,9 @@ wt create <branch> -d     Create a detached worktree at the tip of <branch>
 wt list                   List all worktrees (plain text, scriptable)
 wt prune                  Remove stale worktrees (interactive confirmation)
 wt prune -f               Remove stale worktrees (no confirmation)
+wt sync --from <src>         Copy configured local files from <src> into current worktree
+wt sync --to <dst>           Copy configured local files from current worktree into <dst>
+wt sync --from <src> --to <dst>  Copy configured local files from <src> into <dst>
 wt init [shell]           Output shell integration code (auto-detects from $SHELL)
 wt help                   Show this help
 ```
@@ -110,6 +113,53 @@ If the requested branch is already checked out in another worktree, a new branch
 
 Branch names containing `/` are sanitized to `-` in the filesystem path (e.g. `feature/login` becomes `~/.worktree-switcher/myrepo/feature-login`).
 
+### Copying local gitignored files into new worktrees
+
+You can opt in to copying local-only files (such as `.env`, `.envrc`, or IDE settings) from your main worktree into each newly created worktree.
+
+Create a `.worktree-switcher` file in your repository root (the main worktree path), with one relative path per line:
+
+```txt
+# Files copied from the main worktree to each new worktree
+.env
+.envrc
+.vscode/settings.json
+```
+
+Rules:
+
+- Paths must be relative (no absolute paths, no `..`)
+- Blank lines and lines starting with `#` are ignored
+- Files are copied with mode preserved
+- Directories are copied recursively
+- Symlinks are copied as symlinks
+
+Behavior:
+
+- Missing `.worktree-switcher` file: silent no-op (fully backward compatible)
+- Missing configured source files: warning to stderr, create still succeeds
+- Copy errors (permissions, etc.): warning to stderr, create still succeeds
+- Output contract is preserved: the created worktree path is still printed to stdout
+
+Note: this applies to regular `wt create` flows (CLI and TUI create), not detached `wt create --detached` flows.
+
+To sync configured files between existing worktrees, use:
+
+```sh
+wt sync --from <src>
+wt sync --to <dst>
+wt sync --from <src> --to <dst>
+```
+
+`<src>` and `<dst>` can be a branch name, full worktree path, or unique fragment.
+
+If one side is omitted, the current worktree is used for the missing side:
+
+- `wt sync --from feature-x` copies from `feature-x` into current
+- `wt sync --to feature-x` copies from current into `feature-x`
+
+`--from`/`--to` values require a unique worktree match.
+
 ## Pruning stale worktrees
 
 `wt prune` finds worktrees that are stale and offers to remove them one by one. A worktree is considered stale when:
@@ -127,7 +177,7 @@ The `wt` command is a shell function (not the binary directly). This is necessar
 The shell wrapper handles:
 - Capturing the path printed by `wt-bin` and running `cd` into it
 - The `wt switch` command (pure shell, toggles between current and previous directory)
-- Passing through commands that don't need `cd` (`list`, `prune`, `help`, `init`)
+- Passing through commands that don't need `cd` (`list`, `prune`, `sync`, `help`, `init`)
 - Tab completions for all subcommands and their flags
 
 ## Cross-platform builds

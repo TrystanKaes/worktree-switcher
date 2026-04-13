@@ -46,6 +46,13 @@ func main() {
 			}
 			return
 
+		case "sync":
+			if err := runSync(args[1:]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
+
 		case "--help", "-h", "help":
 			printUsage()
 			return
@@ -186,7 +193,7 @@ const bashInitCode = `wt() {
     return 0
   fi
 
-  if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" ]]; then
+  if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" || "$1" == "sync" ]]; then
     wt-bin "$@"
     return $?
   fi
@@ -205,11 +212,13 @@ const bashInitCode = `wt() {
 _wt_completions() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "switch create list prune help" -- "$cur"))
+    COMPREPLY=($(compgen -W "switch create list prune sync help" -- "$cur"))
   elif [[ "${COMP_WORDS[1]}" == "create" && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=($(compgen -W "--detached -d" -- "$cur"))
   elif [[ "${COMP_WORDS[1]}" == "prune" && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=($(compgen -W "-f --force" -- "$cur"))
+  elif [[ "${COMP_WORDS[1]}" == "sync" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=($(compgen -W "--from --to" -- "$cur"))
   fi
 }
 
@@ -229,7 +238,7 @@ const zshInitCode = `wt() {
     return 0
   fi
 
-  if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" ]]; then
+  if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" || "$1" == "sync" ]]; then
     wt-bin "$@"
     return $?
   fi
@@ -252,6 +261,7 @@ _wt() {
     'create:Create a new worktree'
     'list:List all worktrees'
     'prune:Remove stale worktrees'
+    'sync:Copy configured local files between worktrees'
     'help:Show help'
   )
 
@@ -271,11 +281,137 @@ _wt() {
       '--force:Force removal without confirmation'
     )
     _describe 'flag' prune_flags
+  elif (( CURRENT == 3 )) && [[ "${words[2]}" == "sync" ]]; then
+    local -a sync_flags
+    sync_flags=(
+      '--from:Source worktree (branch, path, or fragment)'
+      '--to:Destination worktree (branch, path, or fragment)'
+    )
+    _describe 'flag' sync_flags
   fi
 }
 
 compdef _wt wt
 `
+
+func runSync(args []string) error {
+	worktrees, err := ListWorktrees()
+	if err != nil {
+		return err
+	}
+
+	fromSpec := ""
+	toSpec := ""
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case strings.HasPrefix(a, "--from="):
+			fromSpec = strings.TrimSpace(strings.TrimPrefix(a, "--from="))
+		case strings.HasPrefix(a, "--to="):
+			toSpec = strings.TrimSpace(strings.TrimPrefix(a, "--to="))
+		case a == "--from":
+			if i+1 >= len(args) {
+				return fmt.Errorf("missing value for --from")
+			}
+			fromSpec = strings.TrimSpace(args[i+1])
+			i++
+		case a == "--to":
+			if i+1 >= len(args) {
+				return fmt.Errorf("missing value for --to")
+			}
+			toSpec = strings.TrimSpace(args[i+1])
+			i++
+		default:
+			return fmt.Errorf("unknown argument %q\nusage: wt sync [--from <branch|path|fragment>] [--to <branch|path|fragment>]", a)
+		}
+	}
+
+	if fromSpec == "" && toSpec == "" {
+		return fmt.Errorf("must specify at least one of --from or --to\nusage: wt sync [--from <branch|path|fragment>] [--to <branch|path|fragment>]")
+	}
+
+	current, err := currentWorktree(worktrees)
+	if err != nil {
+		return err
+	}
+
+	source := current
+	dest := current
+
+	if fromSpec != "" {
+		source, err = resolveWorktree(worktrees, fromSpec)
+		if err != nil {
+			return err
+		}
+	}
+	if toSpec != "" {
+		dest, err = resolveWorktree(worktrees, toSpec)
+		if err != nil {
+			return err
+		}
+	}
+
+	copyFilesFromSource(source.Path, dest.Path, fmt.Sprintf("%q", source.BranchOrPathLabel()))
+	fmt.Fprintf(os.Stderr, "wt: copy: sync complete from %s to %s\n", source.ShortPath(), dest.ShortPath())
+	return nil
+}
+
+func currentWorktree(worktrees []Worktree) (Worktree, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return Worktree{}, err
+	}
+	cwd = filepath.Clean(cwd)
+	bestLen := -1
+	var best Worktree
+	for _, wt := range worktrees {
+		root := filepath.Clean(wt.Path)
+		if cwd == root || strings.HasPrefix(cwd, root+string(os.PathSeparator)) {
+			if len(root) > bestLen {
+				best = wt
+				bestLen = len(root)
+			}
+		}
+	}
+	if bestLen == -1 {
+		return Worktree{}, fmt.Errorf("current directory is not inside a known worktree")
+	}
+	return best, nil
+}
+
+func resolveWorktree(worktrees []Worktree, spec string) (Worktree, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return Worktree{}, fmt.Errorf("empty worktree spec")
+	}
+
+	for _, wt := range worktrees {
+		if wt.Branch == spec {
+			return wt, nil
+		}
+	}
+
+	absSpec, _ := filepath.Abs(spec)
+	absSpec = filepath.Clean(absSpec)
+	for _, wt := range worktrees {
+		if filepath.Clean(wt.Path) == absSpec {
+			return wt, nil
+		}
+	}
+
+	match, ok := FindWorktreeByFragment(worktrees, spec)
+	if !ok {
+		return Worktree{}, fmt.Errorf("no unique worktree match for %q (found 0 or multiple matches)", spec)
+	}
+	return match, nil
+}
+
+func (w Worktree) BranchOrPathLabel() string {
+	if w.Branch != "" {
+		return w.Branch
+	}
+	return w.Path
+}
 
 func runCreate(args []string) error {
 	detached := false
@@ -365,8 +501,16 @@ Usage:
   wt list                   List all worktrees (plain text, scriptable)
   wt prune                  Remove stale worktrees (interactive confirmation)
   wt prune -f               Remove stale worktrees (no confirmation)
+  wt sync --from src        Copy from src into current worktree
+  wt sync --to dst          Copy from current worktree into dst
+  wt sync --from src --to dst  Copy from src worktree into dst worktree
   wt init [shell]           Output shell integration code (auto-detects from $SHELL)
   wt help                   Show this help
+
+Copy-on-create config:
+  Create .worktree-switcher in your main worktree root to copy local files
+  (e.g. .env, .envrc, .vscode/settings.json) into newly created worktrees.
+  One relative path per line; '#' comments and blank lines are ignored.
 
 Shell setup:
   Add to your shell config:  eval "$(wt-bin init)"

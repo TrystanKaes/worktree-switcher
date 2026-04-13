@@ -323,6 +323,7 @@ func CreateWorktreeForBranch(repo, branch string, numbered bool) (path string, a
 			}
 			return "", "", fmt.Errorf("git worktree add failed: %w", err)
 		}
+		copyFilesFromMain(path)
 		return path, newBranch, nil
 	}
 
@@ -333,6 +334,7 @@ func CreateWorktreeForBranch(repo, branch string, numbered bool) (path string, a
 	if err := AddWorktree(path, branch, !exists, false); err != nil {
 		return "", "", err
 	}
+	copyFilesFromMain(path)
 	return path, branch, nil
 }
 

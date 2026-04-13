@@ -1,13 +1,15 @@
-BINARY    := wt-bin
-MODULE    := github.com/trystankaes/worktree-switcher
-BUILD_DIR := dist
-VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS   := -s -w
+BINARY        := wt-bin
+LEGACY_BINARY := worktree-switcher
+MODULE        := github.com/trystankaes/worktree-switcher
+BUILD_DIR     := dist
+VERSION       := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS       := -s -w
 
-.PHONY: build build-all clean install
+.PHONY: build build-all clean install trystan
 
 # Build for the current platform
 build:
+	rm -f $(LEGACY_BINARY)
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 # Build for multiple platforms
@@ -27,5 +29,8 @@ install: build
 	@bash $(CURDIR)/install.sh
 
 clean:
-	rm -f $(BINARY)
+	rm -f $(BINARY) $(LEGACY_BINARY)
 	rm -rf $(BUILD_DIR)
+
+trystan: install
+	mv ~/go/bin/wt-bin ~/.dotfiles/bin
