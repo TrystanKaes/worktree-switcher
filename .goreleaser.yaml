@@ -39,17 +39,16 @@ release:
   draft: false
   prerelease: auto
 
-homebrew_casks:
+brews:
   - name: worktree-switcher
     repository:
       owner: TrystanKaes
       name: homebrew-Tools
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Casks
+    directory: Formula
     homepage: https://github.com/TrystanKaes/worktree-switcher
     description: Interactive TUI for managing and switching between git worktrees
-    binaries:
-      - worktree-switcher
+    license: MIT
     caveats: |
       To finish install add the following to your shell config
       (~/.zshrc, ~/.bashrc, or ~/.bash_profile):
@@ -58,6 +57,7 @@ homebrew_casks:
 
       Then restart your shell or run: source ~/.zshrc (or your shell config file).
 
-      FWIW This is needed because shell's can't inherit directory changes from child processes.
-      When you use worktree-switcher it runs as a subprocess and some of it's most critical functions (i.e. 'cd'ing into directories) die with it.
-      Don't worry, this is the same pattern used by rbenv, nvm, Zoxide, and many other popular tools.
+      This is needed because shells can't inherit directory changes from child processes.
+      When you use worktree-switcher it runs as a subprocess and some of its most critical
+      functions (i.e. cd'ing into directories) die with it. This is the same pattern used
+      by rbenv, nvm, Zoxide, and many other popular tools.
