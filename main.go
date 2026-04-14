@@ -245,6 +245,8 @@ _wt_completions() {
 }
 
 complete -F _wt_completions wt
+
+wts() { wt switch; }
 `
 
 const zshInitCode = `wt() {
@@ -326,6 +328,8 @@ _wt() {
 }
 
 compdef _wt wt
+
+wts() { wt switch; }
 `
 
 func runSync(args []string) error {
@@ -528,7 +532,7 @@ Usage:
   wt                        Show this help
   wt <query>                Fuzzy-match a worktree and switch to it (best by recency)
   wti                       Interactive TUI to select a worktree
-  wt switch                 Return to the previous worktree
+  wt switch / wts           Return to the previous worktree
   wt create                 Create a worktree for the current branch
   wt create <branch>        Create a worktree for the given branch (or new branch)
   wt create --detached      Create a detached HEAD worktree
