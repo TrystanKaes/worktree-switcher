@@ -327,7 +327,9 @@ _wt() {
   fi
 }
 
-compdef _wt wt
+if (( $+functions[compdef] )); then
+  compdef _wt wt
+fi
 
 wts() { wt switch; }
 `
