@@ -15,26 +15,27 @@ A CLI for managing and switching between git worktrees. Fuzzy-match a worktree b
 brew install TrystanKaes/Tools/worktree-switcher
 ```
 
-After install, add shell integration to your shell config (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
+Then add shell integration to your shell config (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
 
 ```sh
 eval "$(worktree-switcher init)"
 ```
 
-Then restart your shell or `source` your config file.
+Restart your shell or `source` your config file.
 
 ### From source
 
 ```sh
-git clone https://github.com/trystankaes/worktree-switcher.git
+git clone https://github.com/TrystanKaes/worktree-switcher.git
 cd worktree-switcher
 make install
 ```
 
-`make install` does two things:
+`make install` does three things:
 
-1. **Installs the binary** — copies `worktree-switcher` to `~/.local/bin` (created if it doesn't exist). If that directory isn't on your `$PATH`, the installer adds it to your shell profile automatically.
-2. **Adds shell integration** — appends `eval "$(worktree-switcher init)"` to your shell profile (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`). This creates the `wt` and `wti` shell functions needed for `cd` to work. Safe to re-run — won't duplicate entries.
+1. **Builds the binary** — runs `go build` to produce the `worktree-switcher` binary.
+2. **Installs the binary** — copies it to `~/.local/bin` (created if it doesn't exist). If that directory isn't on your `$PATH`, it is added to your shell profile automatically.
+3. **Adds shell integration** — appends `eval "$(worktree-switcher init)"` to your shell profile, auto-detected from `$SHELL` (supports bash and zsh). Safe to re-run — won't duplicate entries.
 
 Restart your shell or `source` your profile to activate.
 
