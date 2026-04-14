@@ -1,0 +1,108 @@
+name: Auto Tag and Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  auto-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      next_tag: ${{ steps.version.outputs.next_tag }}
+      should_release: ${{ steps.bump.outputs.bump != 'none' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s%n%b" 2>/dev/null || git log --pretty=format:"%s%n%b")
+
+          if [ -z "$COMMITS" ]; then
+            echo "No commits since last tag. Skipping."
+            echo "bump=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BUMP="none"
+
+          if echo "$COMMITS" | grep -qE '^[a-z]+(\([^)]+\))?!:' || \
+             echo "$COMMITS" | grep -qE '^BREAKING[- ]CHANGE'; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qE '^feat(\([^)]+\))?!?:'; then
+            BUMP="minor"
+          elif echo "$COMMITS" | grep -qE '^(fix|perf|revert)(\([^)]+\))?!?:'; then
+            BUMP="patch"
+          fi
+
+          echo "Bump type: $BUMP"
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next version
+        id: version
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          LATEST_TAG="${{ steps.bump.outputs.latest_tag }}"
+          BUMP="${{ steps.bump.outputs.bump }}"
+
+          VERSION="${LATEST_TAG#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "Next tag: $NEXT_TAG"
+          echo "next_tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          NEXT_TAG="${{ steps.version.outputs.next_tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$NEXT_TAG" -m "Release $NEXT_TAG"
+          git push origin "$NEXT_TAG"
+          echo "Pushed tag $NEXT_TAG"
+
+  release:
+    needs: auto-tag
+    if: needs.auto-tag.outputs.next_tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.auto-tag.outputs.next_tag }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
