@@ -1,5 +1,4 @@
 # Binary
-wt-bin
 worktree-switcher
 
 # Build output
@@ -25,4 +24,7 @@ Thumbs.db
 *.test
 *.out
 .claude/settings.local.json
+
+# Plans
+plans/
 

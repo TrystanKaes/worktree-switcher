@@ -1,0 +1,62 @@
+version: 2
+
+project_name: worktree-switcher
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: worktree-switcher
+    binary: worktree-switcher
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - none*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: TrystanKaes
+    name: worktree-switcher
+  draft: false
+  prerelease: auto
+
+brews:
+  - name: worktree-switcher
+    repository:
+      owner: TrystanKaes
+      name: homebrew-Tools
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/TrystanKaes/worktree-switcher
+    description: Interactive TUI for managing and switching between git worktrees
+    license: MIT
+    install: |
+      bin.install "worktree-switcher"
+    caveats: |
+      To enable the wt and wti shell functions, add the following to your shell config
+      (~/.zshrc, ~/.bashrc, or ~/.bash_profile):
+
+        eval "$(worktree-switcher init)"
+
+      Then restart your shell or run: source ~/.zshrc (or your shell config file).
+    test: |
+      system "#{bin}/worktree-switcher", "--version"

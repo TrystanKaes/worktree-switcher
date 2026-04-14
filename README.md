@@ -1,6 +1,6 @@
 # worktree-switcher
 
-An interactive TUI for managing and switching between git worktrees. Type to fuzzy-filter, press enter to `cd` into your selection.
+A CLI for managing and switching between git worktrees. Fuzzy-match a worktree by name to jump straight to it, or launch the interactive TUI picker with `wti`.
 
 ## Requirements
 
@@ -9,50 +9,101 @@ An interactive TUI for managing and switching between git worktrees. Type to fuz
 
 ## Installation
 
+### Homebrew (recommended)
+
+```sh
+brew install TrystanKaes/Tools/worktree-switcher
+```
+
+After install, add shell integration to your shell config (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
+
+```sh
+eval "$(worktree-switcher init)"
+```
+
+Then restart your shell or `source` your config file.
+
+### From source
+
 ```sh
 git clone https://github.com/trystankaes/worktree-switcher.git
 cd worktree-switcher
 make install
 ```
 
-This builds the `wt-bin` binary, copies it to `$GOPATH/bin` (or `$HOME/go/bin`), and adds shell integration to your profile (`~/.bashrc`, `~/.bash_profile`, or `~/.zshrc`). Restart your shell or `source` your profile to activate.
+`make install` does two things:
+
+1. **Installs the binary** — copies `worktree-switcher` to `~/.local/bin` (created if it doesn't exist). If that directory isn't on your `$PATH`, the installer adds it to your shell profile automatically.
+2. **Adds shell integration** — appends `eval "$(worktree-switcher init)"` to your shell profile (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`). This creates the `wt` and `wti` shell functions needed for `cd` to work. Safe to re-run — won't duplicate entries.
+
+Restart your shell or `source` your profile to activate.
+
+To install to a different location:
+
+```sh
+make install INSTALL_DIR=/usr/local/bin
+```
+
+## Uninstall
+
+```sh
+make uninstall
+```
+
+Removes the binary from `~/.local/bin`. Then manually remove the following lines from your shell profile:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"   # if the installer added this
+eval "$(worktree-switcher init)"
+```
 
 <details>
 <summary>Manual setup</summary>
 
-If you prefer to configure your shell yourself, skip `make install` and add this to your shell config:
+If you prefer to set things up yourself:
+
+1. Build the binary and place it somewhere on your `$PATH`:
 
 ```sh
-eval "$(wt-bin init)"
+make build
+cp worktree-switcher ~/.local/bin/    # or anywhere on $PATH
 ```
 
-You can also specify the shell explicitly: `wt-bin init bash` or `wt-bin init zsh`.
+2. Add this to your shell config (`~/.zshrc`, `~/.bashrc`, etc.):
+
+```sh
+eval "$(worktree-switcher init)"
+```
+
+You can also specify the shell explicitly: `worktree-switcher init bash` or `worktree-switcher init zsh`.
 
 </details>
 
 ## Commands
 
 ```
-wt                        Interactive TUI to select a worktree
-wt <fragment>             Switch to worktree matching fragment (path or branch)
+wt                        Show help
+wt <query>                Fuzzy-match a worktree and switch to it (best by recency)
+wti                       Interactive TUI to select a worktree
 wt switch                 Return to the previous worktree
-wt create                 Create a worktree for the current branch
+wt create                 Create a worktree for the current branch (auto-numbered)
 wt create <branch>        Create a worktree for the given branch (or new branch)
-wt create --detached      Create a detached HEAD worktree
+wt create --detached      Create a detached HEAD worktree (auto-numbered)
 wt create <branch> -d     Create a detached worktree at the tip of <branch>
 wt list                   List all worktrees (plain text, scriptable)
 wt prune                  Remove stale worktrees (interactive confirmation)
 wt prune -f               Remove stale worktrees (no confirmation)
-wt sync --from <src>         Copy configured local files from <src> into current worktree
-wt sync --to <dst>           Copy configured local files from current worktree into <dst>
+wt sync --from <src>      Copy configured local files from <src> into current worktree
+wt sync --to <dst>        Copy configured local files from current worktree into <dst>
 wt sync --from <src> --to <dst>  Copy configured local files from <src> into <dst>
 wt init [shell]           Output shell integration code (auto-detects from $SHELL)
 wt help                   Show this help
+worktree-switcher --version  Print version
 ```
 
 ## Interactive TUI
 
-Run `wt` with no arguments to launch the picker. Worktrees are sorted by most recently modified. The previously selected worktree is pinned to the top with a `(prev)` label.
+Run `wti` to launch the picker. Worktrees are sorted by most recently modified. The previously selected worktree is pinned to the top with a `(prev)` label.
 
 ### Keybindings
 
@@ -75,22 +126,31 @@ If the branch already exists and is checked out in another worktree, a new branc
 
 Press `d` (when not filtering) to enter delete mode:
 
-1. Each worktree shows a `[ ]` checkbox; the cursor line shows `[X]` in red
-2. Press Enter on a worktree to see a confirmation dialog (Cancel / Delete)
-3. Use Left/Right arrows (or `h`/`l`) to choose, Enter to confirm
-4. If the worktree has uncommitted changes, a second prompt asks whether to force delete
-5. The TUI stays in delete mode after deletion so you can continue removing worktrees
-6. Press `d` again or Esc to exit delete mode
+1. The header changes to `WORKTREE SWITCHER (delete mode)` in red
+2. Navigate to the worktree you want to remove; the cursor line is highlighted in red
+3. Press Enter to open a confirmation dialog (Cancel / Delete)
+4. Use Left/Right arrows (or `h`/`l`) to choose, Enter to confirm
+5. If the worktree has uncommitted changes, a second prompt asks whether to force delete
+6. The TUI stays in delete mode after deletion so you can continue removing worktrees
+7. Press `d` again or Esc to exit delete mode
 
-## Direct switching
+## Fuzzy switching
 
-Pass a fragment to jump directly to a matching worktree by path or branch name:
+Pass a query to jump directly to the best-matching worktree:
 
 ```sh
-wt feat        # cd into the worktree whose path or branch contains "feat"
+wt feat        # cd into the best worktree matching "feat"
+wt main        # exact branch match takes priority
+wt fx          # fuzzy match — characters appear in order in path or branch
 ```
 
-The fragment is matched against the full path, short path (`~/...`), base directory name, and branch name. If it matches zero or more than one worktree, an error is returned.
+Matching uses a tiered scoring system:
+
+1. **Exact** (score 3) — branch name equals the query
+2. **Substring** (score 2) — query is a substring of the path, short path, or branch
+3. **Fuzzy** (score 1) — all query characters appear in order in the path, short path, or branch
+
+Among equal scores, the most recently modified worktree wins. This means you can type a short query and reliably land on the worktree you used most recently.
 
 ## Quick switch
 
@@ -98,11 +158,11 @@ The fragment is matched against the full path, short path (`~/...`), base direct
 
 ## Creating worktrees
 
-`wt create` creates new worktrees stored at `~/.worktree-switcher/<repo>/<branch>`:
+`wt create` creates new worktrees stored under `~/.worktree-switcher/<repo>/`:
 
 ```sh
 wt create              # worktree for current branch (auto-numbered: branch/1, branch/2, ...)
-wt create feature-x    # worktree for feature-x (creates branch if it doesn't exist)
+wt create feature-x    # worktree for feature-x at ~/.worktree-switcher/repo/feature-x
 wt create --detached   # detached HEAD worktree (auto-numbered: detached/1, detached/2, ...)
 wt create feature-x -d # detached worktree at the tip of feature-x
 ```
@@ -141,7 +201,7 @@ Behavior:
 - Copy errors (permissions, etc.): warning to stderr, create still succeeds
 - Output contract is preserved: the created worktree path is still printed to stdout
 
-Note: this applies to regular `wt create` flows (CLI and TUI create), not detached `wt create --detached` flows.
+Note: file copying applies to regular `wt create` flows (CLI and TUI create), not detached worktrees created with `--detached`.
 
 To sync configured files between existing worktrees, use:
 
@@ -153,12 +213,10 @@ wt sync --from <src> --to <dst>
 
 `<src>` and `<dst>` can be a branch name, full worktree path, or unique fragment.
 
-If one side is omitted, the current worktree is used for the missing side:
+If one side is omitted, the current worktree is used:
 
 - `wt sync --from feature-x` copies from `feature-x` into current
 - `wt sync --to feature-x` copies from current into `feature-x`
-
-`--from`/`--to` values require a unique worktree match.
 
 ## Pruning stale worktrees
 
@@ -172,11 +230,12 @@ Use `-f` or `--force` to skip confirmation prompts and remove all stale worktree
 
 ## Shell integration
 
-The `wt` command is a shell function (not the binary directly). This is necessary so it can `cd` into the selected worktree in your current shell session. The binary is called `wt-bin`.
+The `wt` and `wti` commands are shell functions (not the binary directly). This is necessary so they can `cd` into the selected worktree in your current shell session. The binary is called `worktree-switcher`.
 
 The shell wrapper handles:
-- Capturing the path printed by `wt-bin` and running `cd` into it
-- The `wt switch` command (pure shell, toggles between current and previous directory)
+- `wt <query>` — captures the path printed by `worktree-switcher` and runs `cd` into it
+- `wti` — launches the interactive TUI via `worktree-switcher interactive` and `cd`s into the selection
+- `wt switch` — pure shell, toggles between current and previous directory using `$__WT_LAST_DIR`
 - Passing through commands that don't need `cd` (`list`, `prune`, `sync`, `help`, `init`)
 - Tab completions for all subcommands and their flags
 
