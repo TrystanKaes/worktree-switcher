@@ -89,37 +89,6 @@ wt fl          # fuzzy: matches feature-login
 
 `wti` opens a full-screen picker. Worktrees are sorted by most recently modified, and your previous worktree is pinned to the top.
 
-```
-WORKTREE SWITCHER
-
-> ~/projects/myapp (prev)              main          2 minutes ago
-  ~/worktrees/myapp/feature-login      feature-login 1 hour ago
-  ~/worktrees/myapp/hotfix-auth        hotfix-auth   3 hours ago
-
-  + Create new worktree
-```
-
-### Keybindings
-
-| Key | Action |
-|-----|--------|
-| `↑` / `↓` | Move cursor |
-| `Enter` | Select / confirm |
-| Type | Filter worktrees |
-| `Backspace` | Clear filter |
-| `d` | Toggle delete mode (when not filtering) |
-| `Esc` / `Ctrl+C` | Cancel / quit |
-
-### Creating from the TUI
-
-Select `+ Create new worktree` and press `Enter`. Type a branch name and press `Enter` to create the worktree and switch into it. Press `Esc` to cancel.
-
-If the branch is already checked out elsewhere, a new branch is created automatically (e.g. `main-2`).
-
-### Deleting from the TUI
-
-Press `d` to enter delete mode. Navigate to a worktree and press `Enter` to confirm deletion. If the worktree has uncommitted changes, a second prompt asks whether to force-delete. Press `d` again or `Esc` to exit delete mode.
-
 ## Quick switch
 
 `wts` (or `wt switch`) returns to the last worktree you were in. Run it again to toggle back. Useful for rapid back-and-forth between two worktrees.
