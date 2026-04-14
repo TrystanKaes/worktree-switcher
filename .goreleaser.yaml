@@ -1,0 +1,63 @@
+version: 2
+
+project_name: worktree-switcher
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: worktree-switcher
+    binary: worktree-switcher
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - none*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: TrystanKaes
+    name: worktree-switcher
+  draft: false
+  prerelease: auto
+
+homebrew_casks:
+  - name: worktree-switcher
+    repository:
+      owner: TrystanKaes
+      name: homebrew-Tools
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/TrystanKaes/worktree-switcher
+    description: Interactive TUI for managing and switching between git worktrees
+    binaries:
+      - worktree-switcher
+    caveats: |
+      To finish install add the following to your shell config
+      (~/.zshrc, ~/.bashrc, or ~/.bash_profile):
+
+        eval "$(worktree-switcher init)"
+
+      Then restart your shell or run: source ~/.zshrc (or your shell config file).
+
+      FWIW This is needed because shell's can't inherit directory changes from child processes.
+      When you use worktree-switcher it runs as a subprocess and some of it's most critical functions (i.e. 'cd'ing into directories) die with it.
+      Don't worry, this is the same pattern used by rbenv, nvm, Zoxide, and many other popular tools.

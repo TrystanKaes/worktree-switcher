@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// Version is injected at build time via -ldflags "-X main.Version=<tag>".
+var Version = "dev"
+
 func main() {
 	args := os.Args[1:]
 
@@ -62,6 +65,10 @@ func main() {
 
 		case "--help", "-h", "help":
 			printUsage()
+			return
+
+		case "version", "--version", "-v":
+			fmt.Printf("worktree-switcher %s\n", Version)
 			return
 
 		default:
@@ -168,7 +175,7 @@ func runInit(args []string) error {
 	} else {
 		shellEnv := os.Getenv("SHELL")
 		if shellEnv == "" {
-			return fmt.Errorf("no shell specified and $SHELL is not set\nUsage: wt-bin init [bash|zsh]")
+			return fmt.Errorf("no shell specified and $SHELL is not set\nUsage: worktree-switcher init [bash|zsh]")
 		}
 		shell = filepath.Base(shellEnv)
 	}
@@ -198,12 +205,12 @@ const bashInitCode = `wt() {
   fi
 
   if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" || "$1" == "sync" ]]; then
-    wt-bin "$@"
+    worktree-switcher "$@"
     return $?
   fi
 
   local dir
-  dir="$(wt-bin "$@")"
+  dir="$(worktree-switcher "$@")"
   local rc=$?
 
   if [[ $rc -eq 0 && -n "$dir" ]]; then
@@ -215,7 +222,7 @@ const bashInitCode = `wt() {
 
 wti() {
   local dir
-  dir="$(wt-bin interactive "$@")"
+  dir="$(worktree-switcher interactive "$@")"
   local rc=$?
   if [[ $rc -eq 0 && -n "$dir" ]]; then
     __WT_LAST_DIR="$PWD"
@@ -254,12 +261,12 @@ const zshInitCode = `wt() {
   fi
 
   if [[ "$1" == "list" || "$1" == "prune" || "$1" == "help" || "$1" == "--help" || "$1" == "-h" || "$1" == "init" || "$1" == "sync" ]]; then
-    wt-bin "$@"
+    worktree-switcher "$@"
     return $?
   fi
 
   local dir
-  dir="$(wt-bin "$@")"
+  dir="$(worktree-switcher "$@")"
   local rc=$?
 
   if [[ $rc -eq 0 && -n "$dir" ]]; then
@@ -271,7 +278,7 @@ const zshInitCode = `wt() {
 
 wti() {
   local dir
-  dir="$(wt-bin interactive "$@")"
+  dir="$(worktree-switcher interactive "$@")"
   local rc=$?
   if [[ $rc -eq 0 && -n "$dir" ]]; then
     __WT_LAST_DIR="$PWD"
@@ -541,7 +548,7 @@ Copy-on-create config:
   One relative path per line; '#' comments and blank lines are ignored.
 
 Shell setup:
-  Add to your shell config:  eval "$(wt-bin init)"
+  Add to your shell config:  eval "$(worktree-switcher init)"
 
 Navigation (TUI — launched via wti):
   ↑/↓         Move cursor
