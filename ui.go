@@ -61,6 +61,7 @@ type model struct {
 	creating      bool   // true when in create-new input mode
 	createInput   string // branch name being typed
 	createErr     string
+	showLegend    bool // true when legend panel is visible
 }
 
 func newModel(worktrees []Worktree, rows []columns.Row, previousIdx int) model {
@@ -311,6 +312,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyRunes:
 			r := string(msg.Runes)
+			if r == "?" && m.filter == "" {
+				m.showLegend = !m.showLegend
+				return m, nil
+			}
 			if (r == "d" || r == "D") && m.filter == "" {
 				m.deleteMode = !m.deleteMode
 				m.deleteErr = ""
@@ -495,10 +500,14 @@ func (m model) View() string {
 	}
 
 	b.WriteString("\n")
+	if m.showLegend {
+		b.WriteString(columns.RenderLegend(tuiStyles()))
+		b.WriteString("\n\n")
+	}
 	if m.deleteMode {
 		b.WriteString(dangerStyle.Render("d exit delete mode • enter delete • esc cancel"))
 	} else {
-		b.WriteString(dimStyle.Render("↑/↓ navigate • enter select • type to filter • d delete • esc quit"))
+		b.WriteString(dimStyle.Render("↑/↓ navigate • enter select • type to filter • d delete • ? legend • esc quit"))
 	}
 	b.WriteString("\n")
 

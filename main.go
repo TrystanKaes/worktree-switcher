@@ -20,7 +20,13 @@ func main() {
 	if len(args) > 0 {
 		switch args[0] {
 		case "list":
-			if err := runList(); err != nil {
+			showLegend := false
+			for _, a := range args[1:] {
+				if a == "-l" {
+					showLegend = true
+				}
+			}
+			if err := runList(showLegend); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
@@ -135,7 +141,7 @@ func runInteractive() error {
 	return nil
 }
 
-func runList() error {
+func runList(showLegend bool) error {
 	worktrees, err := ListWorktrees()
 	if err != nil {
 		return err
@@ -171,6 +177,12 @@ func runList() error {
 
 	metrics := columns.Aggregate(rows, layout.HiddenCount)
 	fmt.Println(styles.Dim.Render(columns.Format(metrics)))
+	if showLegend {
+		fmt.Println()
+		fmt.Println(columns.RenderLegend(styles))
+	} else {
+		fmt.Println(styles.Dim.Render("-l to see the Status Legend"))
+	}
 	return nil
 }
 
@@ -249,7 +261,7 @@ func runDirect(fragment string) error {
 
 	ws, ok := FindWorktreeByFuzzy(worktrees, fragment)
 	if !ok {
-		return fmt.Errorf("no worktree match for %q", fragment)
+		return fmt.Errorf("no worktree match for %q\nrun `wt create %s` to create one.", fragment, fragment)
 	}
 	fmt.Println(ws.Path)
 	return nil
@@ -627,6 +639,7 @@ Usage:
   wt create --detached      Create a detached HEAD worktree
   wt create <branch> -d     Create a detached worktree at the tip of <branch>
   wt list                   List all worktrees (plain text, scriptable)
+  wt list -l                List all worktrees with Status Legend
   wt prune                  Remove stale worktrees (interactive confirmation)
   wt prune -f               Remove stale worktrees (no confirmation)
   wt sync --from src        Copy from src into current worktree
@@ -649,5 +662,8 @@ Navigation (TUI — launched via wti):
   Type         Filter worktrees
   Backspace   Clear filter
   d            Toggle delete mode (when not filtering)
+  ?            Toggle status legend
   Esc/Ctrl+C  Quit without selecting`)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, columns.RenderLegend(columns.Styles{}))
 }
