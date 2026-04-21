@@ -5,6 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	xterm "github.com/charmbracelet/x/term"
+	"github.com/trystankaes/worktree-switcher/columns"
 )
 
 // Version is injected at build time via -ldflags "-X main.Version=<tag>".
@@ -97,8 +101,9 @@ func runInteractive() error {
 	SortByModified(worktrees)
 
 	// Pin previous worktree to top if __WT_LAST_DIR is set
+	lastDir := os.Getenv("__WT_LAST_DIR")
 	previousIdx := -1
-	if lastDir := os.Getenv("__WT_LAST_DIR"); lastDir != "" {
+	if lastDir != "" {
 		for i, ws := range worktrees {
 			if ws.Path == lastDir {
 				if i > 0 {
@@ -113,7 +118,13 @@ func runInteractive() error {
 		}
 	}
 
-	selected, err := RunTUI(worktrees, previousIdx)
+	// Collect rich data before the TUI starts so the first paint is complete.
+	mainBranch := detectMainBranch()
+	cwd, _ := os.Getwd()
+	rows := toRows(worktrees, mainBranch, cwd, lastDir)
+	columns.Collect(rows, mainBranch)
+
+	selected, err := RunTUI(worktrees, rows, previousIdx)
 	if err != nil {
 		return err
 	}
@@ -132,7 +143,40 @@ func runList() error {
 
 	SortByModified(worktrees)
 
-	// Compute column widths
+	// Non-TTY: legacy 3-column plain output (byte-stable for scripts).
+	if !xterm.IsTerminal(os.Stdout.Fd()) {
+		return runListLegacy(worktrees)
+	}
+
+	// TTY: rich multi-column output.
+	termWidth, _, err := xterm.GetSize(os.Stdout.Fd())
+	if err != nil || termWidth <= 0 {
+		termWidth = 100
+	}
+
+	mainBranch := detectMainBranch()
+	cwd, _ := os.Getwd()
+	lastDir := os.Getenv("__WT_LAST_DIR")
+
+	rows := toRows(worktrees, mainBranch, cwd, lastDir)
+	columns.Collect(rows, mainBranch)
+
+	layout := columns.Allocate(rows, termWidth)
+	styles := listStyles()
+
+	fmt.Println(columns.RenderHeader(layout, styles))
+	for _, row := range rows {
+		fmt.Println(columns.RenderRow(row, layout, styles, false, false, row.IsPrevious))
+	}
+
+	metrics := columns.Aggregate(rows, layout.HiddenCount)
+	fmt.Println(styles.Dim.Render(columns.Format(metrics)))
+	return nil
+}
+
+// runListLegacy emits the legacy 3-column plain-text output.
+// Output is byte-stable vs pre-feature behaviour (no ANSI, no footer).
+func runListLegacy(worktrees []Worktree) error {
 	maxPath := 0
 	maxBranch := 0
 	for _, ws := range worktrees {
@@ -144,7 +188,6 @@ func runList() error {
 			maxBranch = len(ws.Branch)
 		}
 	}
-
 	for _, ws := range worktrees {
 		path := ws.ShortPath()
 		pathPad := path + strings.Repeat(" ", maxPath-len(path))
@@ -152,6 +195,50 @@ func runList() error {
 		fmt.Printf("%s  %s  %s\n", pathPad, branchPad, ws.RelativeTime())
 	}
 	return nil
+}
+
+// toRows converts a slice of Worktrees into a slice of columns.Row,
+// populating all identity and flag fields. Rich data fields are left nil
+// and filled in by columns.Collect.
+func toRows(worktrees []Worktree, mainBranch, cwd, lastDir string) []columns.Row {
+	cwd = filepath.Clean(cwd)
+	rows := make([]columns.Row, len(worktrees))
+	for i, wt := range worktrees {
+		rows[i] = columns.Row{
+			Path:       wt.Path,
+			Branch:     wt.Branch,
+			ShortPath:  wt.ShortPath(),
+			Commit:     wt.Commit,
+			IsBare:     wt.IsBare,
+			ModifiedAt: wt.ModifiedAt,
+			IsDetached: wt.Branch == "(detached)",
+			IsMain:     mainBranch != "" && wt.Branch == mainBranch,
+			IsPrevious: lastDir != "" && wt.Path == lastDir,
+		}
+		// IsCurrent: longest-prefix match (mirrors currentWorktree logic).
+		root := filepath.Clean(wt.Path)
+		if cwd == root || strings.HasPrefix(cwd, root+string(os.PathSeparator)) {
+			rows[i].IsCurrent = true
+		}
+	}
+	return rows
+}
+
+// listStyles constructs Styles targeting os.Stdout (used by runList).
+// Colours match the TUI palette in ui.go.
+func listStyles() columns.Styles {
+	r := lipgloss.NewRenderer(os.Stdout)
+	return columns.Styles{
+		Dim:      r.NewStyle().Foreground(lipgloss.Color("8")),
+		Addition: r.NewStyle().Foreground(lipgloss.Color("2")),
+		Deletion: r.NewStyle().Foreground(lipgloss.Color("1")),
+		Selected: r.NewStyle().Bold(true).Foreground(lipgloss.Color("6")),
+		Delete:   r.NewStyle().Bold(true).Foreground(lipgloss.Color("1")),
+		Branch:   r.NewStyle().Foreground(lipgloss.Color("3")),
+		Danger:   r.NewStyle().Foreground(lipgloss.Color("1")),
+		Header:   r.NewStyle().Bold(true).Foreground(lipgloss.Color("2")),
+		Prev:     r.NewStyle().Foreground(lipgloss.Color("4")),
+	}
 }
 
 func runDirect(fragment string) error {

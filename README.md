@@ -61,13 +61,37 @@ Supports **bash** and **zsh**. Tab completions are included automatically.
 | `wt create <branch>` | Create a worktree for a branch (creates branch if it doesn't exist) |
 | `wt create --detached` | Create a detached HEAD worktree |
 | `wt create <branch> -d` | Create a detached worktree at the tip of `<branch>` |
-| `wt list` | List all worktrees (path, branch, last modified) |
+| `wt list` | List all worktrees — rich table under a TTY, plain text when piped (scriptable) |
 | `wt prune` | Remove stale worktrees interactively |
 | `wt prune -f` | Remove stale worktrees without confirmation |
 | `wt sync --from <src>` | Copy configured local files from `<src>` into the current worktree |
 | `wt sync --to <dst>` | Copy configured local files from the current worktree into `<dst>` |
 | `wt sync --from <src> --to <dst>` | Copy between two specific worktrees |
 | `wt help` | Show help |
+
+## List columns
+
+`wt list` and `wti` display a multi-column table when running under a terminal. Columns are hidden automatically when the terminal is too narrow; the footer reports how many are hidden.
+
+| Column | Header | Symbol | Meaning |
+|--------|--------|--------|---------|
+| Gutter | _(none)_ | `@` | Current working directory |
+| Gutter | _(none)_ | `^` | Main-branch worktree |
+| Gutter | _(none)_ | `+` | Any other worktree |
+| Branch | `Branch` | text | Branch name |
+| Status | `Status` | `+` `!` `?` `»` `✘` | Staged / modified / untracked / renamed / deleted |
+| Status | `Status` | `⤴` `⤵` `⊞` | Rebase / merge / cherry-pick in progress |
+| Status | `Status` | `^` `↑` `↓` `↕` `_` `⚑` | Main-branch relationship (is-main / ahead / behind / diverged / in-sync / detached) |
+| Status | `Status` | `⇡` `⇣` `⇅` `\|` | Remote tracking: ahead / behind / diverged / in-sync |
+| HEAD± | `HEAD±` | `+N -N` | Lines added/deleted vs HEAD |
+| main↕ | `main↕` | `↑N ↓N` | Commits ahead/behind main branch |
+| Remote⇅ | `Remote⇅` | `⇡N ⇣N` | Commits ahead/behind upstream |
+| Path | `Path` | text | Worktree path (`~`-abbreviated) |
+| Commit | `Commit` | `abc1234` | Short commit SHA |
+| Age | `Age` | `5m` `2h` `3d` `4w` `2mo` `1y` | Commit age |
+| Message | `Message` | text | Commit subject |
+
+When piped (`wt list \| cat`), output falls back to plain text for scripting compatibility.
 
 ## Fuzzy switching
 

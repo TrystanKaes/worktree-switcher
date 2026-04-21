@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/trystankaes/worktree-switcher/columns"
 )
 
 // deleteResultMsg is sent back from an async RemoveWorktree call.
@@ -28,19 +29,22 @@ func removeWorktreeCmd(path string, force bool) tea.Cmd {
 var renderer = lipgloss.NewRenderer(os.Stderr)
 
 var (
-	headerStyle = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))  // green
-	selectedStyle = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))  // cyan
-	dimStyle      = renderer.NewStyle().Foreground(lipgloss.Color("8"))             // gray
-	branchStyle   = renderer.NewStyle().Foreground(lipgloss.Color("3"))             // yellow
-	timeStyle     = renderer.NewStyle().Foreground(lipgloss.Color("8"))             // gray
-	filterStyle   = renderer.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)  // magenta
-	prevStyle     = renderer.NewStyle().Foreground(lipgloss.Color("4"))             // blue
-	deleteStyle   = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))  // red
-	dangerStyle   = renderer.NewStyle().Foreground(lipgloss.Color("1"))             // red dim
+	headerStyle   = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("2")) // green
+	selectedStyle = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("6")) // cyan
+	dimStyle      = renderer.NewStyle().Foreground(lipgloss.Color("8"))            // gray
+	branchStyle   = renderer.NewStyle().Foreground(lipgloss.Color("3"))            // yellow
+	filterStyle   = renderer.NewStyle().Foreground(lipgloss.Color("5")).Bold(true) // magenta
+	prevStyle     = renderer.NewStyle().Foreground(lipgloss.Color("4"))            // blue
+	deleteStyle   = renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("1")) // red
+	dangerStyle   = renderer.NewStyle().Foreground(lipgloss.Color("1"))            // red dim
 )
 
 type model struct {
 	worktrees     []Worktree
+	rows          []columns.Row // parallel to worktrees; rich data for rendering
+	layout        columns.Layout
+	footer        string
+	width         int
 	filtered      []int // indices into worktrees
 	cursor        int
 	filter        string
@@ -59,15 +63,38 @@ type model struct {
 	createErr     string
 }
 
-func newModel(worktrees []Worktree, previousIdx int) model {
+func newModel(worktrees []Worktree, rows []columns.Row, previousIdx int) model {
+	const defaultWidth = 100
 	indices := make([]int, len(worktrees))
 	for i := range worktrees {
 		indices[i] = i
 	}
+	layout := columns.Allocate(rows, defaultWidth)
+	footer := columns.Format(columns.Aggregate(rows, layout.HiddenCount))
 	return model{
 		worktrees:   worktrees,
+		rows:        rows,
+		layout:      layout,
+		footer:      footer,
+		width:       defaultWidth,
 		filtered:    indices,
 		previousIdx: previousIdx,
+	}
+}
+
+// tuiStyles returns a Styles set targeting the TUI renderer (stderr).
+// Colours match the existing ui.go palette.
+func tuiStyles() columns.Styles {
+	return columns.Styles{
+		Dim:      dimStyle,
+		Addition: renderer.NewStyle().Foreground(lipgloss.Color("2")),
+		Deletion: renderer.NewStyle().Foreground(lipgloss.Color("1")),
+		Selected: selectedStyle,
+		Delete:   deleteStyle,
+		Branch:   branchStyle,
+		Danger:   dangerStyle,
+		Header:   headerStyle,
+		Prev:     prevStyle,
 	}
 }
 
@@ -95,10 +122,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.deleteErr = errMsg
 		} else {
-			// Remove the deleted worktree by matching on path
+			// Remove the deleted worktree by matching on path; keep rows in sync.
 			for i, wt := range m.worktrees {
 				if wt.Path == msg.path {
 					m.worktrees = append(m.worktrees[:i], m.worktrees[i+1:]...)
+					m.rows = append(m.rows[:i], m.rows[i+1:]...)
 					if m.previousIdx == i {
 						m.previousIdx = -1
 					} else if m.previousIdx > i {
@@ -296,6 +324,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applyFilter()
 			return m, nil
 		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.layout = columns.Allocate(m.rows, m.width)
+		m.footer = columns.Format(columns.Aggregate(m.rows, m.layout.HiddenCount))
+		return m, nil
 	}
 	return m, nil
 }
@@ -435,68 +468,18 @@ func (m model) View() string {
 		b.WriteString(dangerStyle.Render("  error: "+m.deleteErr) + "\n\n")
 	}
 
-	// Compute column widths for alignment
-	maxPath := 0
-	maxBranch := 0
-	for _, idx := range m.filtered {
-		ws := m.worktrees[idx]
-		sp := ws.ShortPath()
-		if len(sp) > maxPath {
-			maxPath = len(sp)
-		}
-		if len(ws.Branch) > maxBranch {
-			maxBranch = len(ws.Branch)
-		}
-	}
+	styles := tuiStyles()
 
+	// Column header row
+	b.WriteString(columns.RenderHeader(m.layout, styles))
+	b.WriteString("\n")
+
+	// Worktree rows
 	for i, idx := range m.filtered {
-		ws := m.worktrees[idx]
+		row := m.rows[idx]
 		isCursor := i == m.cursor
-
-		path := ws.ShortPath()
-		branch := ws.Branch
-		relTime := ws.RelativeTime()
-
-		// Pad for alignment
-		pathPadded := path + strings.Repeat(" ", maxPath-len(path))
-		branchPadded := branch + strings.Repeat(" ", maxBranch-len(branch))
-
-		prevLabel := ""
-		if idx == m.previousIdx {
-			prevLabel = "  " + prevStyle.Render("(prev)")
-		}
-
-		// Build prefix
-		var prefix string
-		if isCursor {
-			prefix = "> "
-		} else {
-			prefix = "  "
-		}
-
-		if isCursor {
-			pathRender := selectedStyle.Render(pathPadded)
-			if m.deleteMode {
-				pathRender = deleteStyle.Render(pathPadded)
-			}
-			line := fmt.Sprintf("%s%s  %s  %s%s",
-				prefix,
-				pathRender,
-				branchStyle.Render(branchPadded),
-				timeStyle.Render(relTime),
-				prevLabel,
-			)
-			b.WriteString(line)
-		} else {
-			line := fmt.Sprintf("%s%s  %s  %s%s",
-				prefix,
-				dimStyle.Render(pathPadded),
-				dimStyle.Render(branchPadded),
-				dimStyle.Render(relTime),
-				prevLabel,
-			)
-			b.WriteString(line)
-		}
+		isPrev := idx == m.previousIdx
+		b.WriteString(columns.RenderRow(row, m.layout, styles, isCursor, m.deleteMode, isPrev))
 		b.WriteString("\n")
 	}
 
@@ -504,7 +487,7 @@ func (m model) View() string {
 	if !m.deleteMode {
 		b.WriteString("\n")
 		if m.onCreateNew() {
-			b.WriteString(selectedStyle.Render("> + Create new worktree"))
+			b.WriteString(selectedStyle.Render(" + Create new worktree"))
 		} else {
 			b.WriteString(dimStyle.Render("  + Create new worktree"))
 		}
@@ -519,18 +502,27 @@ func (m model) View() string {
 	}
 	b.WriteString("\n")
 
+	// Footer summary line
+	b.WriteString(dimStyle.Render(m.footer))
+	b.WriteString("\n")
+
 	return b.String()
 }
 
 // RunTUI launches the interactive worktree picker.
+// rows must be the parallel rich-data slice produced by columns.Collect
+// for the same worktrees slice (same length, same order).
 // Returns the selected path, or empty string if cancelled.
-func RunTUI(worktrees []Worktree, previousIdx int) (string, error) {
-	m := newModel(worktrees, previousIdx)
+func RunTUI(worktrees []Worktree, rows []columns.Row, previousIdx int) (string, error) {
+	m := newModel(worktrees, rows, previousIdx)
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
 		return "", fmt.Errorf("TUI error: %w", err)
 	}
-	final := result.(model)
+	final, ok := result.(model)
+	if !ok {
+		return "", nil
+	}
 	return final.selected, nil
 }

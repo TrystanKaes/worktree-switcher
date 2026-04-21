@@ -1,68 +1,63 @@
-# Plan: Homebrew Formula via Custom Tap + GoReleaser
+# Plan: Mirror worktrunk list UI — rich columns + footer
 
-**Plan file:** plans/plan-homebrew-formula.md  
-**Checkpointed at:** 2026-04-13T00:00:00Z  
-**Started:** 2026-04-13T00:00:00Z  
-**Current:** Step 8 (manual)
+**Plan file:** plans/plan-worktrunk-list-ui.md  
+**Started:** 2026-04-21T00:00:00Z  
+**Checkpointed at:** 2026-04-21T03:00:00Z  
+**Current:** COMPLETE
 
-## Resume from
+## Status
 
-**All automated steps complete.** Steps 5 and 8 are manual — user must perform them.
-
-### Remaining manual steps
-
-**Step 5:** Create `TrystanKaes/homebrew-Tools` tap repo on GitHub with placeholder formula at `Formula/worktree-switcher.rb` (see plan for skeleton). Can use:
-```sh
-gh repo create TrystanKaes/homebrew-Tools --public
-```
-Then add the placeholder formula.
-
-**Step 8:** Commit all changes, tag v0.1.0, push tag:
-```sh
-git add .
-git commit -m "Add GoReleaser, GitHub Actions release workflow, Homebrew tap setup"
-git tag v0.1.0
-git push && git push --tags
-```
-GitHub Actions runs GoReleaser automatically on tag push.
-
-**Required secret:** Add `HOMEBREW_TAP_TOKEN` (PAT with `repo` scope on `homebrew-Tools`) to the `worktree-switcher` repo secrets in GitHub settings.
-
-### Files touched since last checkpoint
-
-- `.github/workflows/release.yml` — Created. Triggers on `v*` tags. Uses goreleaser-action v6. Passes GITHUB_TOKEN + HOMEBREW_TAP_TOKEN.
-- `README.md` — Added Homebrew install section before git clone method.
-- `.gitignore` — Added `plans/`.
+All 10 steps complete. Post-review bug fixes applied.
 
 ## Checklist
 
-- [x] **Step 1:** Add version flag to the binary *(2026-04-13)*
-  - Files: `main.go`
-- [x] **Step 2:** Wire version into Makefile ldflags *(2026-04-13)*
-  - Files: `Makefile`
-- [x] **Step 3:** Create .goreleaser.yaml *(2026-04-13)*
-  - Files: `.goreleaser.yaml`
-- [x] **Step 4:** Create GitHub Actions release workflow *(2026-04-13)*
-  - Files: `.github/workflows/release.yml`
-- [x] **Step 5:** Create the tap repo *(2026-04-13)*
-  - `Formula/worktree-switcher.rb` placeholder committed to `TrystanKaes/homebrew-Tools` via gh API
-- [x] **Step 6:** Update README *(2026-04-13)*
-  - Files: `README.md`
-- [x] **Step 7:** Update .gitignore *(2026-04-13)*
-  - Files: `.gitignore`
-- [ ] **Step 8:** Tag and release *(manual step — user action required)*
+- [x] **Step 1:** Data types + Row struct *(2026-04-21)*
+- [x] **Step 2:** Parallel collector *(2026-04-21)*
+- [x] **Step 3:** Column registry + layout *(2026-04-21)*
+- [x] **Step 4:** Cell renderers *(2026-04-21)*
+- [x] **Step 5:** Footer *(2026-04-21)*
+- [x] **Step 6:** `wt list` integration *(2026-04-21)*
+- [x] **Step 7:** `wti` TUI integration *(2026-04-21)*
+- [x] **Step 8:** Responsive width *(2026-04-21)* (done as part of 6+7)
+- [x] **Step 9:** README update *(2026-04-21)*
+- [x] **Step 10:** Final polish + bug fixes *(2026-04-21)*
+
+## Post-review fixes applied
+
+1. **Typed-nil panic in `cellDiff`**: Replaced single generic `cellDiff(interface{...})` with two typed functions `cellLineDiff(*LineDiff, int)` and `cellAheadBehindDiff(*AheadBehind, int)`. The original design passed typed nil pointers through an interface, causing `d == nil` to evaluate false → nil dereference panic.
+
+2. **`fetchGitOperation` broken for linked worktrees**: Linked worktrees have `.git` as a regular file (gitlink), not a directory. Changed implementation to call `git -C <path> rev-parse --git-dir` to resolve the real git directory, then probe markers (MERGE_HEAD, rebase-merge, etc.) relative to that path.
+
+3. **Unchecked type assertion in RunTUI**: `result.(model)` → `final, ok := result.(model)` with graceful nil return on failure.
+
+## Files created
+
+- `columns/stats.go`
+- `columns/row.go`
+- `columns/collect.go`
+- `columns/columns.go`
+- `columns/layout.go`
+- `columns/render.go`
+- `columns/footer.go`
+
+## Files modified
+
+- `main.go` — new imports, rewritten runList, updated runInteractive, toRows(), listStyles()
+- `ui.go` — model with rows/width/layout/footer, tuiStyles(), WindowSizeMsg, new render block, updated RunTUI
+- `README.md` — updated wt list description, added List columns section
+- `go.mod` — mattn/go-runewidth and charmbracelet/x/term promoted to direct
 
 ## Last gate
 
-**Timestamp:** 2026-04-13  
-YAML structure check on `.github/workflows/release.yml` → **PASS**  
-`plans/` gitignored → **PASS**
+**Timestamp:** 2026-04-21
+- `go build .` → **PASS**
+- `go vet ./...` → **PASS**
+- `gofmt -l .` → **PASS**
+- `make build` → **PASS**
+- `wt list | cat` → **PASS** (legacy 3-col format preserved)
 
-## Counters
+## Architecture decision
 
-- Files read since last checkpoint: 4
-- Steps completed since last checkpoint: 4
+Plan said extend `Worktree` struct with pointer fields from `columns` package — circular import. Used `columns.Row` parallel slice instead. TUI model keeps `[]Worktree` for operations + `[]columns.Row` for rendering.
 
-## Conflicts
-
-None.
+Plan said use `golang.org/x/term` — used `charmbracelet/x/term` (already in go.sum) instead. Same API, no new dep.
