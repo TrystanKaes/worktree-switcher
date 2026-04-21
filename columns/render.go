@@ -129,11 +129,10 @@ func cellGutter(row Row) string {
 	}
 }
 
-// cellStatus builds the 7-gate status string (padded to statusWidth).
-// Gates: [working(0-2)][worktreeState(3)][mainState(4)][upstream(5)][pad]
-// Placeholder "·" used when source data is nil (worktrunk §6, render.rs:14-20).
+// cellStatus builds the Status cell: 3 work-flag chars + op char + main char + remote char.
+// Placeholder "·" used when source data is nil.
 func cellStatus(row Row, width int) string {
-	// Gate 1: working tree flags (up to 3 chars, left-to-right)
+	// Work flags (up to 3 chars, left-to-right): staged, modified, untracked, renamed, deleted
 	var g1 string
 	if row.WorkingTreeStatus == nil {
 		g1 = "···" // loading placeholder
@@ -141,7 +140,7 @@ func cellStatus(row Row, width int) string {
 		s := row.WorkingTreeStatus
 		var flags []string
 		if s.Staged {
-			flags = append(flags, "+")
+			flags = append(flags, "●")
 		}
 		if s.Modified {
 			flags = append(flags, "!")
@@ -155,12 +154,10 @@ func cellStatus(row Row, width int) string {
 		if s.Deleted {
 			flags = append(flags, "✘")
 		}
-		if s.Conflicts {
-			flags = append(flags, "✘")
-		}
+		// Conflicts omitted here — the op char already shows ✘ for conflict state.
 		switch len(flags) {
 		case 0:
-			g1 = "   "
+			g1 = "✓  "
 		case 1:
 			g1 = flags[0] + "  "
 		case 2:
@@ -170,7 +167,7 @@ func cellStatus(row Row, width int) string {
 		}
 	}
 
-	// Gate 2: worktree state (1 char)
+	// Op char (1 char): in-progress git operation, or conflict
 	var g2 string
 	switch row.GitOp {
 	case GitOpMerge:
@@ -186,11 +183,12 @@ func cellStatus(row Row, width int) string {
 		g2 = "✘"
 	}
 
-	// Gate 3: main-branch relationship (1 char)
+	// Main char (1 char): relationship to the main branch.
+	// IsMain shows space — gutter already carries the ^ symbol.
 	var g3 string
 	switch {
 	case row.IsMain:
-		g3 = "^"
+		g3 = " "
 	case row.IsDetached:
 		g3 = "⚑"
 	case row.MainCounts == nil:
@@ -202,10 +200,10 @@ func cellStatus(row Row, width int) string {
 	case row.MainCounts.Behind > 0:
 		g3 = "↓"
 	default:
-		g3 = "_" // in sync with main
+		g3 = "✓" // in sync with main
 	}
 
-	// Gate 4: upstream divergence (1 char)
+	// Remote char (1 char): divergence from upstream remote
 	var g4 string
 	switch {
 	case row.Upstream == nil:
@@ -219,7 +217,7 @@ func cellStatus(row Row, width int) string {
 	case row.Upstream.Behind > 0:
 		g4 = "⇣"
 	default:
-		g4 = "|" // in sync
+		g4 = "✓" // in sync with remote
 	}
 
 	raw := g1 + g2 + g3 + g4
@@ -268,6 +266,9 @@ func cellUpstream(row Row, width int) string {
 		return padRight("", width)
 	}
 	u := row.Upstream
+	if u.Ahead == 0 && u.Behind == 0 {
+		return padRight("✓", width)
+	}
 	return padRight(fmt.Sprintf("⇡%s ⇣%s", fmtCount(u.Ahead), fmtCount(u.Behind)), width)
 }
 

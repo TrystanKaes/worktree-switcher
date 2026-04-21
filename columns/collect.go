@@ -85,8 +85,7 @@ func fetchCommitDetails(path string) *CommitDetails {
 // Two git commands are issued: status --porcelain for flags, diff HEAD --shortstat
 // for line counts.
 func fetchStatusAndDiff(path string) (*WorkingTreeStatus, *LineDiff) {
-	statusOut, err := runGit(time.Second, "-C", path, "status", "--porcelain=v1",
-		"--no-optional-locks")
+	statusOut, err := runGit(time.Second, "-C", path, "status", "--porcelain=v1")
 	if err != nil {
 		return nil, nil
 	}
@@ -111,8 +110,11 @@ func parseStatus(output string) *WorkingTreeStatus {
 		if x == 'U' || y == 'U' || (x == 'A' && y == 'A') || (x == 'D' && y == 'D') {
 			st.Conflicts = true
 		}
-		// Staged (index modified)
-		if x != ' ' && x != '?' && x != '!' {
+		// Staged: explicit allowlist of index statuses that mean staged changes.
+		// Using a positive check avoids false positives from 'U' (unmerged/conflict)
+		// or any unexpected characters in the porcelain output.
+		switch x {
+		case 'M', 'A', 'D', 'R', 'C', 'T':
 			st.Staged = true
 		}
 		// Working tree
