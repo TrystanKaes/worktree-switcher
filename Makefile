@@ -1,4 +1,5 @@
 BINARY    := worktree-switcher
+DEV_BINARY := worktree-switcher-dev
 MODULE    := github.com/trystankaes/worktree-switcher
 BUILD_DIR := dist
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -6,11 +7,25 @@ LDFLAGS   := -s -w -X main.Version=$(VERSION)
 
 INSTALL_DIR ?= $(HOME)/.local/bin
 
-.PHONY: build build-all clean install uninstall
+.PHONY: build build-all build-dev install-dev dev-aliases clean clean-dev install uninstall
 
 # Build for the current platform
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+
+# Build and install as worktree-switcher-dev so it coexists with the Homebrew formula.
+# Shell usage:  wt-dev list / wt-dev interactive  (add alias to shell profile)
+build-dev:
+	go build -ldflags "$(LDFLAGS)" -o $(DEV_BINARY) .
+
+dev-aliases:
+	@bash scripts/dev-aliases.sh
+
+install-dev: build-dev
+	install -d "$(INSTALL_DIR)"
+	install -m 755 $(DEV_BINARY) "$(INSTALL_DIR)/$(DEV_BINARY)"
+	@echo "Installed $(INSTALL_DIR)/$(DEV_BINARY)"
+	@echo "Run: source <(make dev-aliases)"
 
 # Build for multiple platforms
 build-all: $(BUILD_DIR)
@@ -40,6 +55,15 @@ uninstall:
 	@echo '  export PATH="$(INSTALL_DIR):$$PATH"'
 	@echo '  eval "$$(worktree-switcher init)"'
 
+clean-dev:
+	@if [[ -f "$(INSTALL_DIR)/$(DEV_BINARY)" ]]; then \
+	  rm "$(INSTALL_DIR)/$(DEV_BINARY)"; \
+	  echo "Removed $(INSTALL_DIR)/$(DEV_BINARY)"; \
+	else \
+	  echo "$(INSTALL_DIR)/$(DEV_BINARY) not found — nothing to remove"; \
+	fi
+	@echo "Run: unalias wt-dev wti-dev wts-dev 2>/dev/null; unset -f wt-dev wti-dev wts-dev 2>/dev/null"
+
 clean:
-	rm -f $(BINARY)
+	rm -f $(BINARY) $(DEV_BINARY)
 	rm -rf $(BUILD_DIR)
